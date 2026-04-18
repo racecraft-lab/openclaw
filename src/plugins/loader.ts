@@ -74,6 +74,7 @@ import {
   getMemoryRuntime,
   listMemoryCorpusSupplements,
   listMemoryPromptSupplements,
+  mergeMemoryPluginState,
   restoreMemoryPluginState,
 } from "./memory-state.js";
 import { unwrapDefaultModuleExport } from "./module-export.js";
@@ -1853,7 +1854,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       restoreRegisteredCompactionProviders(cached.compactionProviders);
       restoreDetachedTaskLifecycleRuntimeRegistration(cached.detachedTaskRuntimeRegistration);
       restoreRegisteredMemoryEmbeddingProviders(cached.memoryEmbeddingProviders);
-      restoreMemoryPluginState({
+      mergeMemoryPluginState({
         capability: cached.memoryCapability,
         corpusSupplements: cached.memoryCorpusSupplements,
         promptBuilder: cached.memoryPromptBuilder,
