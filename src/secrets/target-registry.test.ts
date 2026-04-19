@@ -30,6 +30,37 @@ describe("secret target registry", () => {
     expect(targets[0]?.path).toBe(TALK_TEST_PROVIDER_API_KEY_PATH);
   });
 
+  it("discovers core mcp env and header SecretRef targets", () => {
+    const config = {
+      mcp: {
+        servers: {
+          "mission-control": {
+            env: {
+              MC_API_KEY: { source: "env" as const, provider: "default", id: "MC_API_KEY" },
+            },
+            headers: {
+              Authorization: {
+                source: "env" as const,
+                provider: "default",
+                id: "REMOTE_MCP_AUTH",
+              },
+            },
+          },
+        },
+      },
+    } satisfies OpenClawConfig;
+
+    const targets = discoverConfigSecretTargetsByIds(
+      config,
+      new Set(["mcp.servers.*.env.*", "mcp.servers.*.headers.*"]),
+    ).map((target) => target.path);
+
+    expect(targets).toEqual([
+      "mcp.servers.mission-control.env.MC_API_KEY",
+      "mcp.servers.mission-control.headers.Authorization",
+    ]);
+  });
+
   it("resolves config targets by exact path including sibling ref metadata", () => {
     const target = resolveConfigSecretTargetByPath(["channels", "googlechat", "serviceAccount"]);
 
@@ -71,5 +102,18 @@ describe("secret target registry", () => {
     ]);
     expect(fetchTarget).not.toBeNull();
     expect(fetchTarget?.entry?.id).toBe("plugins.entries.firecrawl.config.webFetch.apiKey");
+  });
+
+  it("resolves core mcp env target paths", () => {
+    const target = resolveConfigSecretTargetByPath([
+      "mcp",
+      "servers",
+      "mission-control",
+      "env",
+      "MC_API_KEY",
+    ]);
+
+    expect(target).not.toBeNull();
+    expect(target?.entry?.id).toBe("mcp.servers.*.env.*");
   });
 });
