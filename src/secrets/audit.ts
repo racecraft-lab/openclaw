@@ -126,6 +126,18 @@ const SENSITIVE_MODEL_PROVIDER_HEADER_NAME_FRAGMENTS = [
   "password",
   "credential",
 ];
+const ALWAYS_SENSITIVE_MCP_HEADER_NAMES = ALWAYS_SENSITIVE_MODEL_PROVIDER_HEADER_NAMES;
+const SENSITIVE_MCP_ENV_NAME_FRAGMENTS = [
+  "api_key",
+  "apikey",
+  "token",
+  "secret",
+  "password",
+  "passphrase",
+  "credential",
+  "private_key",
+  "privatekey",
+];
 
 function isLikelySensitiveModelProviderHeaderName(value: string): boolean {
   const normalized = normalizeLowercaseStringOrEmpty(value);
@@ -138,6 +150,27 @@ function isLikelySensitiveModelProviderHeaderName(value: string): boolean {
   return SENSITIVE_MODEL_PROVIDER_HEADER_NAME_FRAGMENTS.some((fragment) =>
     normalized.includes(fragment),
   );
+}
+
+function isLikelySensitiveMcpHeaderName(value: string): boolean {
+  const normalized = normalizeLowercaseStringOrEmpty(value);
+  if (!normalized) {
+    return false;
+  }
+  if (ALWAYS_SENSITIVE_MCP_HEADER_NAMES.has(normalized)) {
+    return true;
+  }
+  return SENSITIVE_MODEL_PROVIDER_HEADER_NAME_FRAGMENTS.some((fragment) =>
+    normalized.includes(fragment),
+  );
+}
+
+function isLikelySensitiveMcpEnvName(value: string): boolean {
+  const normalized = normalizeLowercaseStringOrEmpty(value);
+  if (!normalized) {
+    return false;
+  }
+  return SENSITIVE_MCP_ENV_NAME_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
 function addFinding(collector: AuditCollector, finding: SecretsAuditFinding): void {
@@ -215,6 +248,18 @@ function collectConfigSecrets(params: {
   const defaults = params.config.secrets?.defaults;
   for (const target of discoverConfigSecretTargets(params.config)) {
     if (!target.entry.includeInAudit) {
+      continue;
+    }
+    if (
+      target.entry.id === "mcp.servers.*.env.*" &&
+      !isLikelySensitiveMcpEnvName(target.pathSegments.at(-1) ?? "")
+    ) {
+      continue;
+    }
+    if (
+      target.entry.id === "mcp.servers.*.headers.*" &&
+      !isLikelySensitiveMcpHeaderName(target.pathSegments.at(-1) ?? "")
+    ) {
       continue;
     }
     const { ref } = resolveSecretInputRef({
