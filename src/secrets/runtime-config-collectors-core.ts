@@ -27,6 +27,11 @@ type SkillEntryLike = {
   enabled?: unknown;
 };
 
+type McpServerLike = {
+  env?: unknown;
+  headers?: unknown;
+};
+
 type ProviderRequestLike = {
   headers?: unknown;
   auth?: unknown;
@@ -104,6 +109,50 @@ function collectSkillAssignments(params: {
         entry.apiKey = value;
       },
     });
+  }
+}
+
+function collectMcpAssignments(params: {
+  config: OpenClawConfig;
+  defaults: SecretDefaults | undefined;
+  context: ResolverContext;
+}): void {
+  const servers = params.config.mcp?.servers as Record<string, McpServerLike> | undefined;
+  if (!isRecord(servers)) {
+    return;
+  }
+  for (const [serverName, server] of Object.entries(servers)) {
+    const env = isRecord(server.env) ? server.env : undefined;
+    if (env) {
+      for (const [envKey, envValue] of Object.entries(env)) {
+        collectSecretInputAssignment({
+          value: envValue,
+          path: `mcp.servers.${serverName}.env.${envKey}`,
+          expected: "string",
+          defaults: params.defaults,
+          context: params.context,
+          apply: (value) => {
+            env[envKey] = value;
+          },
+        });
+      }
+    }
+
+    const headers = isRecord(server.headers) ? server.headers : undefined;
+    if (headers) {
+      for (const [headerKey, headerValue] of Object.entries(headers)) {
+        collectSecretInputAssignment({
+          value: headerValue,
+          path: `mcp.servers.${serverName}.headers.${headerKey}`,
+          expected: "string",
+          defaults: params.defaults,
+          context: params.context,
+          apply: (value) => {
+            headers[headerKey] = value;
+          },
+        });
+      }
+    }
   }
 }
 
@@ -635,6 +684,7 @@ export function collectCoreConfigAssignments(params: {
     });
   }
 
+  collectMcpAssignments(params);
   collectAgentMemorySearchAssignments(params);
   collectTalkAssignments(params);
   collectGatewayAssignments(params);
