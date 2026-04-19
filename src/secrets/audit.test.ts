@@ -587,4 +587,90 @@ describe("secrets audit", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not flag generic core mcp env and header literals as plaintext secrets", async () => {
+    await writeJsonFile(fixture.configPath, {
+      mcp: {
+        servers: {
+          "mission-control": {
+            command: "node",
+            env: {
+              MC_URL: "http://127.0.0.1:3000",
+            },
+            headers: {
+              "X-Feature-Flag": "enabled",
+            },
+          },
+        },
+      },
+    });
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {},
+    });
+    await fs.writeFile(fixture.envPath, "", "utf8");
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) =>
+          entry.code === "PLAINTEXT_FOUND" &&
+          entry.file === fixture.configPath &&
+          entry.jsonPath === "mcp.servers.mission-control.env.MC_URL",
+      ),
+    ).toBe(false);
+    expect(
+      hasFinding(
+        report,
+        (entry) =>
+          entry.code === "PLAINTEXT_FOUND" &&
+          entry.file === fixture.configPath &&
+          entry.jsonPath === "mcp.servers.mission-control.headers.X-Feature-Flag",
+      ),
+    ).toBe(false);
+  });
+
+  it("flags sensitive core mcp env and header literals as plaintext secrets", async () => {
+    await writeJsonFile(fixture.configPath, {
+      mcp: {
+        servers: {
+          "mission-control": {
+            command: "node",
+            env: {
+              MC_API_KEY: "plaintext-mcp-api-key",
+            },
+            headers: {
+              Authorization: "Bearer plaintext-mcp-header",
+            },
+          },
+        },
+      },
+    });
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {},
+    });
+    await fs.writeFile(fixture.envPath, "", "utf8");
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) =>
+          entry.code === "PLAINTEXT_FOUND" &&
+          entry.file === fixture.configPath &&
+          entry.jsonPath === "mcp.servers.mission-control.env.MC_API_KEY",
+      ),
+    ).toBe(true);
+    expect(
+      hasFinding(
+        report,
+        (entry) =>
+          entry.code === "PLAINTEXT_FOUND" &&
+          entry.file === fixture.configPath &&
+          entry.jsonPath === "mcp.servers.mission-control.headers.Authorization",
+      ),
+    ).toBe(true);
+  });
 });
