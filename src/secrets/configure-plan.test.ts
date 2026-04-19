@@ -35,6 +35,27 @@ describe("secrets configure plan helpers", () => {
     expect(paths).toContain("channels.telegram.botToken");
   });
 
+  it("does not surface generic core mcp env and header fields as configure candidates", () => {
+    const config = {
+      mcp: {
+        servers: {
+          "mission-control": {
+            env: {
+              MC_URL: "http://127.0.0.1:3000",
+            },
+            headers: {
+              "X-Feature-Flag": "enabled",
+            },
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    const paths = buildConfigureCandidates(config).map((entry) => entry.path);
+    expect(paths).not.toContain("mcp.servers.mission-control.env.MC_URL");
+    expect(paths).not.toContain("mcp.servers.mission-control.headers.X-Feature-Flag");
+  });
+
   it("collects provider upserts and deletes", () => {
     const original = {
       secrets: {
