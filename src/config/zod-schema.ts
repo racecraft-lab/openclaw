@@ -218,9 +218,14 @@ const McpServerSchema = z
     env: z
       .record(
         z.string(),
-        z.union([SecretInputSchema.register(sensitive), z.number(), z.boolean()]).register(
-          sensitive,
-        ),
+        z
+          .union([
+            z.string().register(sensitive),
+            SecretInputSchema.register(sensitive),
+            z.number(),
+            z.boolean(),
+          ])
+          .register(sensitive),
       )
       .optional(),
     cwd: z.string().optional(),
@@ -229,9 +234,14 @@ const McpServerSchema = z
     headers: z
       .record(
         z.string(),
-        z.union([SecretInputSchema.register(sensitive), z.number(), z.boolean()]).register(
-          sensitive,
-        ),
+        z
+          .union([
+            z.string().register(sensitive),
+            SecretInputSchema.register(sensitive),
+            z.number(),
+            z.boolean(),
+          ])
+          .register(sensitive),
       )
       .optional(),
   })
