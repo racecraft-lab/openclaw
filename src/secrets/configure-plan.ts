@@ -7,8 +7,7 @@ import {
   type SecretRef,
 } from "../config/types.secrets.js";
 import {
-  isLikelySensitiveMcpEnvName,
-  isLikelySensitiveMcpHeaderName,
+  shouldIncludeConfigureMcpCandidate,
 } from "./mcp-target-sensitivity.js";
 import type { SecretsApplyPlan } from "./plan.js";
 import { isRecord } from "./shared.js";
@@ -79,13 +78,25 @@ function resolveAuthProfileProvider(
 function shouldIncludeConfigureCandidate(path: {
   entry: { id: string };
   pathSegments: string[];
+  value: unknown;
+  refValue?: unknown;
 }): boolean {
   const leafSegment = path.pathSegments.at(-1) ?? "";
   if (path.entry.id === "mcp.servers.*.env.*") {
-    return isLikelySensitiveMcpEnvName(leafSegment);
+    return shouldIncludeConfigureMcpCandidate({
+      kind: "env",
+      name: leafSegment,
+      value: path.value,
+      refValue: path.refValue,
+    });
   }
   if (path.entry.id === "mcp.servers.*.headers.*") {
-    return isLikelySensitiveMcpHeaderName(leafSegment);
+    return shouldIncludeConfigureMcpCandidate({
+      kind: "header",
+      name: leafSegment,
+      value: path.value,
+      refValue: path.refValue,
+    });
   }
   return true;
 }
