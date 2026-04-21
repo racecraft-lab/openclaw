@@ -39,5 +39,5 @@ function loadBundledChannelPublicArtifact(
 export function loadBundledChannelDoctorContractApi(
   channelId: string,
 ): BundledChannelDoctorContractApi | undefined {
-  return loadBundledChannelPublicArtifact(channelId, ["doctor-contract-api.js", "contract-api.js"]);
+  return loadBundledChannelPublicArtifact(channelId, ["doctor-contract-api.js"]);
 }
