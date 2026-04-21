@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const applyPluginDoctorCompatibilityMigrations = vi.hoisted(() => vi.fn());
 const loadBundledChannelDoctorContractApi = vi.hoisted(() => vi.fn());
-const getBootstrapChannelPlugin = vi.hoisted(() => vi.fn());
+const listBootstrapChannelPluginIds = vi.hoisted(() => vi.fn((): string[] => []));
 
 vi.mock("../../../plugins/doctor-contract-registry.js", () => ({
   applyPluginDoctorCompatibilityMigrations: (...args: unknown[]) =>
@@ -15,7 +15,7 @@ vi.mock("../../../channels/plugins/doctor-contract-api.js", () => ({
 }));
 
 vi.mock("../../../channels/plugins/bootstrap-registry.js", () => ({
-  getBootstrapChannelPlugin: (...args: unknown[]) => getBootstrapChannelPlugin(...args),
+  listBootstrapChannelPluginIds: (...args: unknown[]) => listBootstrapChannelPluginIds(...args),
 }));
 
 let applyChannelDoctorCompatibilityMigrations: typeof import("./channel-legacy-config-migrate.js").applyChannelDoctorCompatibilityMigrations;
@@ -31,7 +31,8 @@ beforeAll(async () => {
 beforeEach(() => {
   applyPluginDoctorCompatibilityMigrations.mockReset();
   loadBundledChannelDoctorContractApi.mockReset();
-  getBootstrapChannelPlugin.mockReset();
+  listBootstrapChannelPluginIds.mockReset();
+  listBootstrapChannelPluginIds.mockReturnValue([]);
 });
 
 describe("bundled channel legacy config migrations", () => {
@@ -59,7 +60,7 @@ describe("bundled channel legacy config migrations", () => {
           }
         : undefined,
     );
-    getBootstrapChannelPlugin.mockReturnValue(undefined);
+    listBootstrapChannelPluginIds.mockReturnValue(["slack"]);
 
     const result = applyChannelDoctorCompatibilityMigrations({
       channels: {
@@ -81,30 +82,37 @@ describe("bundled channel legacy config migrations", () => {
     expect(result.changes).toEqual(["Normalized channels.slack via bundled doctor contract."]);
   });
 
-  it("normalizes legacy private-network aliases exposed through bundled contract surfaces", () => {
-    loadBundledChannelDoctorContractApi.mockReturnValue(undefined);
-    getBootstrapChannelPlugin.mockReturnValue(undefined);
-    applyPluginDoctorCompatibilityMigrations.mockReturnValueOnce({
-      config: {
-        channels: {
-          mattermost: {
-            network: {
-              dangerouslyAllowPrivateNetwork: true,
-            },
-            accounts: {
-              work: {
-                network: {
-                  dangerouslyAllowPrivateNetwork: false,
+  it("normalizes legacy private-network aliases exposed through bundled doctor contract surfaces", () => {
+    listBootstrapChannelPluginIds.mockReturnValue(["mattermost"]);
+    loadBundledChannelDoctorContractApi.mockReturnValue({
+      normalizeCompatibilityConfig: ({
+        cfg,
+      }: {
+        cfg: { channels?: { mattermost?: Record<string, unknown> } };
+      }) => ({
+        config: {
+          ...cfg,
+          channels: {
+            ...cfg.channels,
+            mattermost: {
+              network: {
+                dangerouslyAllowPrivateNetwork: true,
+              },
+              accounts: {
+                work: {
+                  network: {
+                    dangerouslyAllowPrivateNetwork: false,
+                  },
                 },
               },
             },
           },
         },
-      },
-      changes: [
-        "Moved channels.mattermost.allowPrivateNetwork → channels.mattermost.network.dangerouslyAllowPrivateNetwork (true).",
-        "Moved channels.mattermost.accounts.work.allowPrivateNetwork → channels.mattermost.accounts.work.network.dangerouslyAllowPrivateNetwork (false).",
-      ],
+        changes: [
+          "Moved channels.mattermost.allowPrivateNetwork → channels.mattermost.network.dangerouslyAllowPrivateNetwork (true).",
+          "Moved channels.mattermost.accounts.work.allowPrivateNetwork → channels.mattermost.accounts.work.network.dangerouslyAllowPrivateNetwork (false).",
+        ],
+      }),
     });
 
     const result = applyChannelDoctorCompatibilityMigrations({
@@ -120,9 +128,7 @@ describe("bundled channel legacy config migrations", () => {
       },
     });
 
-    expect(applyPluginDoctorCompatibilityMigrations).toHaveBeenCalledWith(expect.any(Object), {
-      pluginIds: ["mattermost"],
-    });
+    expect(applyPluginDoctorCompatibilityMigrations).not.toHaveBeenCalled();
 
     const nextChannels = (result.next.channels ?? {}) as {
       mattermost?: Record<string, unknown>;
