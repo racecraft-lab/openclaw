@@ -1,4 +1,4 @@
-import { getBootstrapChannelPlugin } from "../../../channels/plugins/bootstrap-registry.js";
+import { listBootstrapChannelPluginIds } from "../../../channels/plugins/bootstrap-registry.js";
 import { loadBundledChannelDoctorContractApi } from "../../../channels/plugins/doctor-contract-api.js";
 import type { OpenClawConfig } from "../../../config/types.js";
 import { applyPluginDoctorCompatibilityMigrations } from "../../../plugins/doctor-contract-registry.js";
@@ -23,28 +23,22 @@ function collectRelevantDoctorChannelIds(raw: unknown): string[] {
     .toSorted();
 }
 
-function resolveBundledChannelCompatibilityNormalizer(
-  channelId: string,
-): ChannelDoctorCompatibilityNormalizer | undefined {
-  const contractNormalizer =
-    loadBundledChannelDoctorContractApi(channelId)?.normalizeCompatibilityConfig;
-  if (typeof contractNormalizer === "function") {
-    return contractNormalizer;
-  }
-  return getBootstrapChannelPlugin(channelId)?.doctor?.normalizeCompatibilityConfig;
-}
-
 export function applyChannelDoctorCompatibilityMigrations(cfg: Record<string, unknown>): {
   next: Record<string, unknown>;
   changes: string[];
 } {
   let nextCfg = cfg as OpenClawConfig;
   const changes: string[] = [];
+  const bundledChannelIds = new Set(listBootstrapChannelPluginIds());
   const unresolvedChannelIds: string[] = [];
 
   for (const channelId of collectRelevantDoctorChannelIds(cfg)) {
-    const normalizeCompatibilityConfig = resolveBundledChannelCompatibilityNormalizer(channelId);
+    const normalizeCompatibilityConfig =
+      loadBundledChannelDoctorContractApi(channelId)?.normalizeCompatibilityConfig;
     if (!normalizeCompatibilityConfig) {
+      if (bundledChannelIds.has(channelId)) {
+        continue;
+      }
       unresolvedChannelIds.push(channelId);
       continue;
     }

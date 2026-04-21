@@ -18,16 +18,6 @@ const { loadBundledPluginPublicArtifactModuleSyncMock } = vi.hoisted(() => ({
           legacyConfigRules: [],
         };
       }
-      if (dirName === "telegram" && artifactBasename === "contract-api.js") {
-        return {
-          legacyConfigRules: [
-            {
-              path: ["channels", "telegram", "groupMentionsOnly"],
-              message: "legacy telegram rule",
-            },
-          ],
-        };
-      }
       throw new Error(
         `Unable to resolve bundled plugin public surface ${dirName}/${artifactBasename}`,
       );
@@ -71,20 +61,15 @@ describe("channel doctor contract api fast path", () => {
     });
   });
 
-  it("falls back to the generic contract artifact when the doctor artifact is absent", () => {
+  it("does not fall back to the generic contract artifact when the doctor artifact is absent", () => {
     const api = loadBundledChannelDoctorContractApi("telegram");
 
-    expect(api?.legacyConfigRules).toEqual([
-      {
-        path: ["channels", "telegram", "groupMentionsOnly"],
-        message: "legacy telegram rule",
-      },
-    ]);
+    expect(api).toBeUndefined();
     expect(loadBundledPluginPublicArtifactModuleSyncMock).toHaveBeenCalledWith({
       dirName: "telegram",
       artifactBasename: "doctor-contract-api.js",
     });
-    expect(loadBundledPluginPublicArtifactModuleSyncMock).toHaveBeenCalledWith({
+    expect(loadBundledPluginPublicArtifactModuleSyncMock).not.toHaveBeenCalledWith({
       dirName: "telegram",
       artifactBasename: "contract-api.js",
     });

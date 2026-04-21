@@ -3,11 +3,11 @@ import type { LegacyConfigRule } from "../../config/legacy.shared.js";
 
 const {
   loadBundledChannelDoctorContractApiMock,
-  getBootstrapChannelPluginMock,
+  listBootstrapChannelPluginIdsMock,
   listPluginDoctorLegacyConfigRulesMock,
 } = vi.hoisted(() => ({
   loadBundledChannelDoctorContractApiMock: vi.fn(),
-  getBootstrapChannelPluginMock: vi.fn(),
+  listBootstrapChannelPluginIdsMock: vi.fn((): string[] => []),
   listPluginDoctorLegacyConfigRulesMock: vi.fn((): LegacyConfigRule[] => []),
 }));
 
@@ -16,7 +16,7 @@ vi.mock("./doctor-contract-api.js", () => ({
 }));
 
 vi.mock("./bootstrap-registry.js", () => ({
-  getBootstrapChannelPlugin: getBootstrapChannelPluginMock,
+  listBootstrapChannelPluginIds: listBootstrapChannelPluginIdsMock,
 }));
 
 vi.mock("../../plugins/doctor-contract-registry.js", () => ({
@@ -28,7 +28,8 @@ import { collectChannelLegacyConfigRules } from "./legacy-config.js";
 describe("collectChannelLegacyConfigRules", () => {
   beforeEach(() => {
     loadBundledChannelDoctorContractApiMock.mockReset();
-    getBootstrapChannelPluginMock.mockReset();
+    listBootstrapChannelPluginIdsMock.mockReset();
+    listBootstrapChannelPluginIdsMock.mockReturnValue([]);
     listPluginDoctorLegacyConfigRulesMock.mockReset();
     listPluginDoctorLegacyConfigRulesMock.mockReturnValue([]);
   });
@@ -59,25 +60,24 @@ describe("collectChannelLegacyConfigRules", () => {
         message: "legacy discord rule",
       },
     ]);
-    expect(getBootstrapChannelPluginMock).not.toHaveBeenCalled();
+    expect(listBootstrapChannelPluginIdsMock).toHaveBeenCalled();
     expect(listPluginDoctorLegacyConfigRulesMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to bootstrap rules and only scans unresolved channels", () => {
-    getBootstrapChannelPluginMock.mockImplementation((channelId: string) =>
+  it("falls back to registry scans only for unresolved non-bundled channels", () => {
+    loadBundledChannelDoctorContractApiMock.mockImplementation((channelId: string) =>
       channelId === "slack"
         ? {
-            doctor: {
-              legacyConfigRules: [
-                {
-                  path: ["channels", "slack", "legacy"],
-                  message: "legacy slack rule",
-                },
-              ],
-            },
+            legacyConfigRules: [
+              {
+                path: ["channels", "slack", "legacy"],
+                message: "legacy slack rule",
+              },
+            ],
           }
         : undefined,
     );
+    listBootstrapChannelPluginIdsMock.mockReturnValue(["slack"]);
     listPluginDoctorLegacyConfigRulesMock.mockReturnValue([
       {
         path: ["channels", "custom-chat", "legacy"],
@@ -107,14 +107,8 @@ describe("collectChannelLegacyConfigRules", () => {
     });
   });
 
-  it("does not rescan registry when a bundled bootstrap plugin has no legacy rules", () => {
-    getBootstrapChannelPluginMock.mockImplementation((channelId: string) =>
-      channelId === "imessage"
-        ? {
-            doctor: {},
-          }
-        : undefined,
-    );
+  it("does not rescan registry when a bundled channel has no explicit doctor rules", () => {
+    listBootstrapChannelPluginIdsMock.mockReturnValue(["imessage"]);
 
     const rules = collectChannelLegacyConfigRules({
       channels: {
@@ -130,20 +124,6 @@ describe("collectChannelLegacyConfigRules", () => {
     loadBundledChannelDoctorContractApiMock.mockImplementation((channelId: string) =>
       channelId === "imessage" ? { legacyConfigRules: [] } : undefined,
     );
-    getBootstrapChannelPluginMock.mockImplementation((channelId: string) =>
-      channelId === "imessage"
-        ? {
-            doctor: {
-              legacyConfigRules: [
-                {
-                  path: ["channels", "imessage", "legacy"],
-                  message: "should not load bootstrap rules",
-                },
-              ],
-            },
-          }
-        : undefined,
-    );
 
     const rules = collectChannelLegacyConfigRules({
       channels: {
@@ -152,7 +132,6 @@ describe("collectChannelLegacyConfigRules", () => {
     });
 
     expect(rules).toEqual([]);
-    expect(getBootstrapChannelPluginMock).not.toHaveBeenCalled();
     expect(listPluginDoctorLegacyConfigRulesMock).not.toHaveBeenCalled();
   });
 
