@@ -7,6 +7,7 @@ const modelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const modelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runDaemonStatusMock = vi.hoisted(() => vi.fn(async () => {}));
 const statusJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("../config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
@@ -24,6 +25,10 @@ vi.mock("../daemon-cli/status.js", () => ({
 
 vi.mock("../../commands/status-json.js", () => ({
   statusJsonCommand: statusJsonCommandMock,
+}));
+
+vi.mock("../../commands/agents.js", () => ({
+  agentsListCommand: agentsListCommandMock,
 }));
 
 describe("program routes", () => {
@@ -56,6 +61,17 @@ describe("program routes", () => {
     const shouldLoad = route?.loadPlugins as (argv: string[]) => boolean;
     expect(shouldLoad(["node", "openclaw", "health"])).toBe(true);
     expect(shouldLoad(["node", "openclaw", "health", "--json"])).toBe(false);
+  });
+
+  it("passes parsed agents list flags through", async () => {
+    const route = expectRoute(["agents", "list"]);
+    await expect(
+      route?.run(["node", "openclaw", "agents", "list", "--json", "--bindings", "--providers"]),
+    ).resolves.toBe(true);
+    expect(agentsListCommandMock).toHaveBeenCalledWith(
+      { json: true, bindings: true, providers: true },
+      expect.any(Object),
+    );
   });
 
   it("matches gateway status route without plugin preload", () => {

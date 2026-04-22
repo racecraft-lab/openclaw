@@ -154,6 +154,18 @@ describe("registerAgentCommands", () => {
     expect(agentsListCommandMock).toHaveBeenCalledWith({}, runtime);
   });
 
+  it("forwards root agents alias options", async () => {
+    await runCli(["agents", "--json", "--bindings", "--providers"]);
+    expect(agentsListCommandMock).toHaveBeenCalledWith(
+      {
+        json: true,
+        bindings: true,
+        providers: true,
+      },
+      runtime,
+    );
+  });
+
   it("forwards agents list options", async () => {
     await runCli(["agents", "list", "--json", "--bindings", "--providers"]);
     expect(agentsListCommandMock).toHaveBeenCalledWith(
