@@ -20,6 +20,12 @@ import { createDefaultDeps } from "../deps.js";
 import { formatHelpExamples } from "../help-format.js";
 import { collectOption } from "./helpers.js";
 
+type AgentsParentOptions = {
+  json?: boolean;
+  bindings?: boolean;
+  providers?: boolean;
+};
+
 export function registerAgentCommands(program: Command, args: { agentChannelOptions: string }) {
   program
     .command("agent")
@@ -90,6 +96,10 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
   const agents = program
     .command("agents")
     .description("Manage isolated agents (workspaces + auth + routing)")
+    .enablePositionalOptions()
+    .option("--json", "Output JSON instead of text", false)
+    .option("--bindings", "Include routing bindings", false)
+    .option("--providers", "Include provider/account status (slower)", false)
     .addHelpText(
       "after",
       () =>
@@ -102,13 +112,14 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .option("--json", "Output JSON instead of text", false)
     .option("--bindings", "Include routing bindings", false)
     .option("--providers", "Include provider/account status (slower)", false)
-    .action(async (opts) => {
+    .action(async (opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsListCommand(
           {
-            json: Boolean(opts.json),
-            bindings: Boolean(opts.bindings),
-            providers: Boolean(opts.providers),
+            json: Boolean(opts.json || parentOpts?.json),
+            bindings: Boolean(opts.bindings || parentOpts?.bindings),
+            providers: Boolean(opts.providers || parentOpts?.providers),
           },
           defaultRuntime,
         );
@@ -120,12 +131,13 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .description("List routing bindings")
     .option("--agent <id>", "Filter by agent id")
     .option("--json", "Output JSON instead of text", false)
-    .action(async (opts) => {
+    .action(async (opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsBindingsCommand(
           {
             agent: opts.agent as string | undefined,
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
         );
@@ -143,13 +155,14 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
       [],
     )
     .option("--json", "Output JSON summary", false)
-    .action(async (opts) => {
+    .action(async (opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsBindCommand(
           {
             agent: opts.agent as string | undefined,
             bind: Array.isArray(opts.bind) ? (opts.bind as string[]) : undefined,
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
         );
@@ -163,14 +176,15 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .option("--bind <channel[:accountId]>", "Binding to remove (repeatable)", collectOption, [])
     .option("--all", "Remove all bindings for this agent", false)
     .option("--json", "Output JSON summary", false)
-    .action(async (opts) => {
+    .action(async (opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsUnbindCommand(
           {
             agent: opts.agent as string | undefined,
             bind: Array.isArray(opts.bind) ? (opts.bind as string[]) : undefined,
             all: Boolean(opts.all),
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
         );
@@ -187,6 +201,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .option("--non-interactive", "Disable prompts; requires --workspace", false)
     .option("--json", "Output JSON summary", false)
     .action(async (name, opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         const hasFlags = hasExplicitOptions(command, [
           "workspace",
@@ -203,7 +218,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
             agentDir: opts.agentDir as string | undefined,
             bind: Array.isArray(opts.bind) ? (opts.bind as string[]) : undefined,
             nonInteractive: Boolean(opts.nonInteractive),
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
           { hasFlags },
@@ -242,7 +257,8 @@ ${formatHelpExamples([
 ])}
 `,
     )
-    .action(async (opts) => {
+    .action(async (opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsSetIdentityCommand(
           {
@@ -254,7 +270,7 @@ ${formatHelpExamples([
             theme: opts.theme as string | undefined,
             emoji: opts.emoji as string | undefined,
             avatar: opts.avatar as string | undefined,
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
         );
@@ -266,22 +282,30 @@ ${formatHelpExamples([
     .description("Delete an agent and prune workspace/state")
     .option("--force", "Skip confirmation", false)
     .option("--json", "Output JSON summary", false)
-    .action(async (id, opts) => {
+    .action(async (id, opts, command) => {
+      const parentOpts = command.parent?.opts() as AgentsParentOptions | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsDeleteCommand(
           {
             id: String(id),
             force: Boolean(opts.force),
-            json: Boolean(opts.json),
+            json: Boolean(opts.json || parentOpts?.json),
           },
           defaultRuntime,
         );
       });
     });
 
-  agents.action(async () => {
+  agents.action(async (opts) => {
     await runCommandWithRuntime(defaultRuntime, async () => {
-      await agentsListCommand({}, defaultRuntime);
+      await agentsListCommand(
+        {
+          ...(opts.json ? { json: true } : {}),
+          ...(opts.bindings ? { bindings: true } : {}),
+          ...(opts.providers ? { providers: true } : {}),
+        },
+        defaultRuntime,
+      );
     });
   });
 }

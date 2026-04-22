@@ -9,6 +9,7 @@ const runDaemonStatusMock = vi.hoisted(() => vi.fn(async () => {}));
 const statusJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("../config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
@@ -38,6 +39,10 @@ vi.mock("../../commands/channels/list.js", () => ({
 
 vi.mock("../../commands/channels/status.js", () => ({
   channelsStatusCommand: channelsStatusCommandMock,
+}));
+
+vi.mock("../../commands/agents.js", () => ({
+  agentsListCommand: agentsListCommandMock,
 }));
 
 describe("program routes", () => {
@@ -96,6 +101,17 @@ describe("program routes", () => {
     ).resolves.toBe(true);
     expect(channelsStatusCommandMock).toHaveBeenCalledWith(
       { json: true, probe: true, timeout: "5000" },
+      expect.any(Object),
+    );
+  });
+
+  it("passes parsed agents list flags through", async () => {
+    const route = expectRoute(["agents", "list"]);
+    await expect(
+      route?.run(["node", "openclaw", "agents", "list", "--json", "--bindings", "--providers"]),
+    ).resolves.toBe(true);
+    expect(agentsListCommandMock).toHaveBeenCalledWith(
+      { json: true, bindings: true, providers: true },
       expect.any(Object),
     );
   });
