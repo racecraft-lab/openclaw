@@ -60,6 +60,8 @@ Scope intent:
 - `gateway.remote.token`
 - `gateway.remote.password`
 - `cron.webhookToken`
+- `mcp.servers.*.env.*`
+- `mcp.servers.*.headers.*`
 - `channels.telegram.botToken`
 - `channels.telegram.webhookSecret`
 - `channels.telegram.accounts.*.botToken`
