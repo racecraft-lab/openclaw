@@ -1,4 +1,5 @@
 import { formatCliCommand } from "../cli/command-format.js";
+import { ensureCliPluginRegistryLoaded } from "../cli/plugin-registry-loader.js";
 import { listRouteBindings } from "../config/bindings.js";
 import type { AgentRouteBinding } from "../config/types.js";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -100,6 +101,9 @@ export async function agentsListCommand(
     }
   }
 
+  if (opts.providers) {
+    await ensureCliPluginRegistryLoaded({ scope: "all" });
+  }
   const providerStatus = opts.providers ? await buildProviderStatusIndex(cfg) : null;
 
   for (const summary of summaries) {
