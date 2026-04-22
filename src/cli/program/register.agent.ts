@@ -101,10 +101,15 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .description("List configured agents")
     .option("--json", "Output JSON instead of text", false)
     .option("--bindings", "Include routing bindings", false)
+    .option("--providers", "Include provider/account status (slower)", false)
     .action(async (opts) => {
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsListCommand(
-          { json: Boolean(opts.json), bindings: Boolean(opts.bindings) },
+          {
+            json: Boolean(opts.json),
+            bindings: Boolean(opts.bindings),
+            providers: Boolean(opts.providers),
+          },
           defaultRuntime,
         );
       });

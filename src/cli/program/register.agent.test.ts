@@ -155,11 +155,12 @@ describe("registerAgentCommands", () => {
   });
 
   it("forwards agents list options", async () => {
-    await runCli(["agents", "list", "--json", "--bindings"]);
+    await runCli(["agents", "list", "--json", "--bindings", "--providers"]);
     expect(agentsListCommandMock).toHaveBeenCalledWith(
       {
         json: true,
         bindings: true,
+        providers: true,
       },
       runtime,
     );
