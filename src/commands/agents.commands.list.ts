@@ -18,6 +18,7 @@ import {
 type AgentsListOptions = {
   json?: boolean;
   bindings?: boolean;
+  providers?: boolean;
 };
 
 function formatSummary(summary: AgentSummary) {
@@ -99,7 +100,7 @@ export async function agentsListCommand(
     }
   }
 
-  const providerStatus = await buildProviderStatusIndex(cfg);
+  const providerStatus = opts.providers ? await buildProviderStatusIndex(cfg) : null;
 
   for (const summary of summaries) {
     const bindings = bindingMap.get(summary.id) ?? [];
@@ -110,14 +111,16 @@ export async function agentsListCommand(
       summary.routes = ["default (no explicit rules)"];
     }
 
-    const providerLines = listProvidersForAgent({
-      summaryIsDefault: summary.isDefault,
-      cfg,
-      bindings,
-      providerStatus,
-    });
-    if (providerLines.length > 0) {
-      summary.providers = providerLines;
+    if (providerStatus) {
+      const providerLines = listProvidersForAgent({
+        summaryIsDefault: summary.isDefault,
+        cfg,
+        bindings,
+        providerStatus,
+      });
+      if (providerLines.length > 0) {
+        summary.providers = providerLines;
+      }
     }
   }
 
@@ -128,6 +131,7 @@ export async function agentsListCommand(
 
   const lines = ["Agents:", ...summaries.map(formatSummary)];
   lines.push("Routing rules map channel/account/peer to an agent. Use --bindings for full rules.");
+  lines.push("Use --providers to include provider/account status when you need it.");
   lines.push(
     `Channel status reflects local config/creds. For live health: ${formatCliCommand("openclaw channels status --probe")}.`,
   );
