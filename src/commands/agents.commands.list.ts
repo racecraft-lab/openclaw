@@ -19,6 +19,7 @@ import {
 type AgentsListOptions = {
   json?: boolean;
   bindings?: boolean;
+  providers?: boolean;
 };
 
 function formatSummary(summary: AgentSummary) {
@@ -100,26 +101,19 @@ export async function agentsListCommand(
     }
   }
 
-  // Provider details are only used for human text output
-  // (`summary.providers` is rendered in the text formatter). JSON callers
-  // (dashboards, monitors, IDE plugins) poll the config-derived fields, so skip
-  // the provider detail pass unless they explicitly ask for binding/provider
-  // enrichment with --bindings. Combined with `loadPlugins: "text-only"` in the
-  // catalog entry, this keeps `agents list --json` on the config-only path.
-  const includeProviderDetails = !opts.json || opts.bindings === true;
-  const providerStatus = includeProviderDetails ? await buildProviderStatusIndex(cfg) : null;
-  const providerMetadata = includeProviderDetails ? buildProviderSummaryMetadataIndex(cfg) : null;
+  const providerMetadata = buildProviderSummaryMetadataIndex(cfg);
+  const providerStatus = opts.providers ? await buildProviderStatusIndex(cfg) : null;
 
   for (const summary of summaries) {
     const bindings = bindingMap.get(summary.id) ?? [];
-    if (includeProviderDetails && providerStatus && providerMetadata) {
-      const routes = summarizeBindings(cfg, bindings, providerMetadata);
-      if (routes.length > 0) {
-        summary.routes = routes;
-      } else if (summary.isDefault) {
-        summary.routes = ["default (no explicit rules)"];
-      }
+    const routes = summarizeBindings(cfg, bindings, providerMetadata);
+    if (routes.length > 0) {
+      summary.routes = routes;
+    } else if (summary.isDefault) {
+      summary.routes = ["default (no explicit rules)"];
+    }
 
+    if (providerStatus) {
       const providerLines = listProvidersForAgent({
         summaryIsDefault: summary.isDefault,
         cfg,
@@ -140,6 +134,7 @@ export async function agentsListCommand(
 
   const lines = ["Agents:", ...summaries.map(formatSummary)];
   lines.push("Routing rules map channel/account/peer to an agent. Use --bindings for full rules.");
+  lines.push("Use --providers to include provider/account status when you need it.");
   lines.push(
     `Channel status reflects local config/creds. For live health: ${formatCliCommand("openclaw channels status --probe")}.`,
   );

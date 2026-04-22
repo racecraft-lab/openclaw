@@ -106,10 +106,19 @@ describe("route-args", () => {
     });
     expect(parseSessionsRouteArgs(["node", "openclaw", "sessions", "--agent"])).toBeNull();
     expect(
-      parseAgentsListRouteArgs(["node", "openclaw", "agents", "list", "--json", "--bindings"]),
+      parseAgentsListRouteArgs([
+        "node",
+        "openclaw",
+        "agents",
+        "list",
+        "--json",
+        "--bindings",
+        "--providers",
+      ]),
     ).toEqual({
       json: true,
       bindings: true,
+      providers: true,
     });
   });
 

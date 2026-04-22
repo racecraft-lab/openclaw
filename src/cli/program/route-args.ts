@@ -157,6 +157,7 @@ export function parseAgentsListRouteArgs(argv: string[]) {
   return {
     json: hasFlag(argv, "--json"),
     bindings: hasFlag(argv, "--bindings"),
+    providers: hasFlag(argv, "--providers"),
   };
 }
 
