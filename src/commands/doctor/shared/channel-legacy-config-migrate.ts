@@ -9,10 +9,6 @@ type ChannelDoctorCompatibilityMutation = {
   changes: string[];
 };
 
-type ChannelDoctorCompatibilityNormalizer = (params: {
-  cfg: OpenClawConfig;
-}) => ChannelDoctorCompatibilityMutation;
-
 function collectRelevantDoctorChannelIds(raw: unknown): string[] {
   const channels = isRecord(raw) && isRecord(raw.channels) ? raw.channels : null;
   if (!channels) {
