@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   listRouteBindings: vi.fn(),
   normalizeAgentId: vi.fn((value: string) => value.trim().toLowerCase()),
   describeBinding: vi.fn((binding: { agentId: string }) => `binding:${binding.agentId}`),
+  ensureCliPluginRegistryLoaded: vi.fn(async () => {}),
   buildProviderStatusIndex: vi.fn(),
   listProvidersForAgent: vi.fn(),
   summarizeBindings: vi.fn(),
@@ -36,6 +37,12 @@ vi.mock("../routing/session-key.js", () => ({
 vi.mock("./agents.bindings.js", () => ({
   describeBinding: (...args: Parameters<typeof mocks.describeBinding>) =>
     mocks.describeBinding(...args),
+}));
+
+vi.mock("../cli/plugin-registry-loader.js", () => ({
+  ensureCliPluginRegistryLoaded: (
+    ...args: Parameters<typeof mocks.ensureCliPluginRegistryLoaded>
+  ) => mocks.ensureCliPluginRegistryLoaded(...args),
 }));
 
 vi.mock("./agents.providers.js", () => ({
@@ -81,6 +88,7 @@ describe("agentsListCommand", () => {
     ]);
     mocks.listRouteBindings.mockReturnValue([]);
     mocks.summarizeBindings.mockReturnValue([]);
+    mocks.ensureCliPluginRegistryLoaded.mockResolvedValue(undefined);
     mocks.buildProviderStatusIndex.mockResolvedValue(new Map());
     mocks.listProvidersForAgent.mockReturnValue([]);
   });
@@ -90,6 +98,7 @@ describe("agentsListCommand", () => {
 
     await agentsListCommand({}, runtime as never);
 
+    expect(mocks.ensureCliPluginRegistryLoaded).not.toHaveBeenCalled();
     expect(mocks.buildProviderStatusIndex).not.toHaveBeenCalled();
     expect(mocks.listProvidersForAgent).not.toHaveBeenCalled();
     expect(runtime.log).toHaveBeenCalledTimes(1);
@@ -119,6 +128,7 @@ describe("agentsListCommand", () => {
 
     await agentsListCommand({ providers: true }, runtime as never);
 
+    expect(mocks.ensureCliPluginRegistryLoaded).toHaveBeenCalledWith({ scope: "all" });
     expect(mocks.buildProviderStatusIndex).toHaveBeenCalledWith({});
     expect(mocks.listProvidersForAgent).toHaveBeenCalledTimes(1);
     const output = String(runtime.log.mock.calls[0]?.[0]);
@@ -131,10 +141,21 @@ describe("agentsListCommand", () => {
 
     await agentsListCommand({ json: true }, runtime as never);
 
+    expect(mocks.ensureCliPluginRegistryLoaded).not.toHaveBeenCalled();
     expect(mocks.buildProviderStatusIndex).not.toHaveBeenCalled();
     expect(mocks.writeRuntimeJson).toHaveBeenCalledTimes(1);
     const payload = mocks.writeRuntimeJson.mock.calls[0]?.[1] as Array<Record<string, unknown>>;
     expect(payload[0]?.routes).toEqual(["default (no explicit rules)"]);
     expect(payload[0]).not.toHaveProperty("providers");
+  });
+
+  it("still loads plugins for json provider output when requested", async () => {
+    const runtime = createRuntime();
+
+    await agentsListCommand({ json: true, providers: true }, runtime as never);
+
+    expect(mocks.ensureCliPluginRegistryLoaded).toHaveBeenCalledWith({ scope: "all" });
+    expect(mocks.buildProviderStatusIndex).toHaveBeenCalledTimes(1);
+    expect(mocks.writeRuntimeJson).toHaveBeenCalledTimes(1);
   });
 });

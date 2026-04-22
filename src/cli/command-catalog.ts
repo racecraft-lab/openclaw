@@ -41,6 +41,7 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
   { commandPath: ["channels"], policy: { loadPlugins: "always" } },
   { commandPath: ["directory"], policy: { loadPlugins: "always" } },
   { commandPath: ["agents"], policy: { loadPlugins: "always" } },
+  { commandPath: ["agents"], exact: true, policy: { loadPlugins: "never" } },
   {
     commandPath: ["agents", "bind"],
     exact: true,
@@ -98,12 +99,8 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
   },
   {
     commandPath: ["agents", "list"],
-    // JSON callers (dashboards, monitoring scripts, IDE plugins) poll this
-    // command and don't need the plugin-derived `providers` enrichment that
-    // is only used in human text output. text-only skips the bundled-plugin
-    // import waterfall in `--json` mode, mirroring what `channels list`
-    // already does. Human (non-JSON) invocations still load plugins. (#71739)
-    policy: { loadPlugins: "text-only" },
+    exact: true,
+    policy: { loadPlugins: "never" },
     route: { id: "agents-list" },
   },
   {

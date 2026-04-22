@@ -1,4 +1,5 @@
 import { formatCliCommand } from "../cli/command-format.js";
+import { ensureCliPluginRegistryLoaded } from "../cli/plugin-registry-loader.js";
 import { listRouteBindings } from "../config/bindings.js";
 import type { AgentRouteBinding } from "../config/types.js";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -105,6 +106,9 @@ export async function agentsListCommand(
   // auth/plugin surfaces. JSON callers and default text output stay on the
   // config-only path unless --providers is supplied.
   const includeProviderDetails = opts.providers === true;
+  if (includeProviderDetails) {
+    await ensureCliPluginRegistryLoaded({ scope: "all" });
+  }
   const providerStatus = includeProviderDetails ? await buildProviderStatusIndex(cfg) : null;
   const providerMetadata = includeProviderDetails ? buildProviderSummaryMetadataIndex(cfg) : null;
 
