@@ -18,6 +18,7 @@ Related:
 ## Examples
 
 ```bash
+openclaw agents --providers
 openclaw agents list
 openclaw agents list --providers
 openclaw agents list --bindings
