@@ -1025,6 +1025,7 @@ Options:
 
 - `--json`
 - `--bindings`
+- `--providers`
 
 #### `agents add [name]`
 
