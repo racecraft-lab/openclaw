@@ -467,36 +467,25 @@ describe("registerPreActionHooks", () => {
     expect(ensureConfigReadyMock).not.toHaveBeenCalled();
   });
 
-  it("routes logs to stderr during plugin loading in --json mode and restores after", async () => {
-    let stderrDuringPluginLoad = false;
-    ensurePluginRegistryLoadedMock.mockImplementation(() => {
-      stderrDuringPluginLoad = loggingState.forceConsoleToStderr;
-    });
-
+  it("skips plugin loading during agents list preaction in --json mode", async () => {
     await runPreAction({
       parseArgv: ["agent"],
       processArgv: ["node", "openclaw", "agent", "--message", "hi", "--json"],
     });
 
-    expect(ensurePluginRegistryLoadedMock).toHaveBeenCalled();
-    expect(stderrDuringPluginLoad).toBe(true);
-    // Flag must be restored after plugin loading completes
+    expect(routeLogsToStderrMock).toHaveBeenCalledOnce();
+    expect(ensurePluginRegistryLoadedMock).not.toHaveBeenCalled();
     expect(loggingState.forceConsoleToStderr).toBe(false);
   });
 
-  it("does not route logs to stderr during plugin loading without --json", async () => {
-    let stderrDuringPluginLoad = false;
-    ensurePluginRegistryLoadedMock.mockImplementation(() => {
-      stderrDuringPluginLoad = loggingState.forceConsoleToStderr;
-    });
-
+  it("skips plugin loading during agents list preaction without --json", async () => {
     await runPreAction({
       parseArgv: ["agents", "list"],
       processArgv: ["node", "openclaw", "agents", "list"],
     });
 
-    expect(ensurePluginRegistryLoadedMock).toHaveBeenCalled();
-    expect(stderrDuringPluginLoad).toBe(false);
+    expect(routeLogsToStderrMock).not.toHaveBeenCalled();
+    expect(ensurePluginRegistryLoadedMock).not.toHaveBeenCalled();
     expect(loggingState.forceConsoleToStderr).toBe(false);
   });
 
