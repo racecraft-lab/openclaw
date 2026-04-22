@@ -9,6 +9,7 @@ const runDaemonStatusMock = vi.hoisted(() => vi.fn(async () => {}));
 const statusJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("../config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
@@ -34,6 +35,10 @@ vi.mock("../../commands/channels/list.js", () => ({
 
 vi.mock("../../commands/channels/status.js", () => ({
   channelsStatusCommand: channelsStatusCommandMock,
+}));
+
+vi.mock("../../commands/agents.js", () => ({
+  agentsListCommand: agentsListCommandMock,
 }));
 
 describe("program routes", () => {
@@ -65,6 +70,17 @@ describe("program routes", () => {
   it("matches channel read-only routes without plugin preload", () => {
     expect(expectRoute(["channels", "list"])?.loadPlugins).toBeUndefined();
     expect(expectRoute(["channels", "status"])?.loadPlugins).toBeUndefined();
+  });
+
+  it("passes parsed agents list flags through", async () => {
+    const route = expectRoute(["agents", "list"]);
+    await expect(
+      route?.run(["node", "openclaw", "agents", "list", "--json", "--bindings", "--providers"]),
+    ).resolves.toBe(true);
+    expect(agentsListCommandMock).toHaveBeenCalledWith(
+      { json: true, bindings: true, providers: true },
+      expect.any(Object),
+    );
   });
 
   it("passes parsed channel read-only route flags through", async () => {
