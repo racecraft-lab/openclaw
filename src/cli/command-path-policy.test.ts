@@ -41,6 +41,27 @@ describe("command-path-policy", () => {
       hideBanner: false,
       ensureCliPath: true,
     });
+    expect(resolveCliCommandPathPolicy(["agents"])).toEqual({
+      bypassConfigGuard: false,
+      routeConfigGuard: "never",
+      loadPlugins: "never",
+      hideBanner: false,
+      ensureCliPath: true,
+    });
+    expect(resolveCliCommandPathPolicy(["agents", "list"])).toEqual({
+      bypassConfigGuard: false,
+      routeConfigGuard: "never",
+      loadPlugins: "never",
+      hideBanner: false,
+      ensureCliPath: true,
+    });
+    expect(resolveCliCommandPathPolicy(["agents", "bind"])).toEqual({
+      bypassConfigGuard: false,
+      routeConfigGuard: "never",
+      loadPlugins: "always",
+      hideBanner: false,
+      ensureCliPath: true,
+    });
   });
 
   it("resolves mixed startup-only rules", () => {

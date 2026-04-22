@@ -79,6 +79,18 @@ describe("command-startup-policy", () => {
         commandPath: ["agents", "list"],
         jsonOutputMode: false,
       }),
+    ).toBe(false);
+    expect(
+      shouldLoadPluginsForCommandPath({
+        commandPath: ["agents"],
+        jsonOutputMode: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldLoadPluginsForCommandPath({
+        commandPath: ["agents", "bind"],
+        jsonOutputMode: false,
+      }),
     ).toBe(true);
   });
 
