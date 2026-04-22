@@ -19,6 +19,7 @@ Related:
 
 ```bash
 openclaw agents list
+openclaw agents list --providers
 openclaw agents list --bindings
 openclaw agents add work --workspace ~/.openclaw/workspace-work
 openclaw agents add ops --workspace ~/.openclaw/workspace-ops --bind telegram:ops --non-interactive
@@ -96,6 +97,7 @@ Options:
 
 - `--json`
 - `--bindings`: include full routing rules, not only per-agent counts/summaries
+- `--providers`: include provider/account status (slower)
 
 ### `agents add [name]`
 
