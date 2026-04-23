@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as tar from "tar";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { safePathSegmentHashed } from "../infra/install-safe-path.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { expectSingleNpmInstallIgnoreScriptsCall } from "../test-utils/exec-assertions.js";
@@ -19,6 +20,10 @@ import { createSuiteTempRootTracker } from "./test-helpers/fs-fixtures.js";
 
 vi.mock("../process/exec.js", () => ({
   runCommandWithTimeout: vi.fn(),
+}));
+
+vi.mock("../infra/openclaw-root.js", () => ({
+  resolveOpenClawPackageRootSync: vi.fn(),
 }));
 
 const resolveCompatibilityHostVersionMock = vi.fn();
