@@ -262,6 +262,10 @@ export function hasMemoryRuntime(): boolean {
   return getMemoryRuntime() !== undefined;
 }
 
+export function hasActiveMemoryPublicArtifactsProvider(): boolean {
+  return memoryPluginState.capability?.capability.publicArtifacts !== undefined;
+}
+
 function cloneMemoryPublicArtifact(
   artifact: MemoryPluginPublicArtifact,
 ): MemoryPluginPublicArtifact {

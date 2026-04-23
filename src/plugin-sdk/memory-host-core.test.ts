@@ -6,6 +6,7 @@ import {
 } from "../plugins/memory-state.js";
 import {
   buildActiveMemoryPromptSection,
+  hasActiveMemoryPublicArtifactsProvider,
   listActiveMemoryPublicArtifacts,
 } from "./memory-host-core.js";
 
@@ -30,6 +31,8 @@ describe("memory-host-core helpers", () => {
   });
 
   it("exposes active memory public artifacts for companion plugins", async () => {
+    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(false);
+
     registerMemoryCapability("memory-core", {
       publicArtifacts: {
         async listArtifacts() {
@@ -46,6 +49,8 @@ describe("memory-host-core helpers", () => {
         },
       },
     });
+
+    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(true);
 
     await expect(listActiveMemoryPublicArtifacts({ cfg: {} as never })).resolves.toEqual([
       {
