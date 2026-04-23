@@ -5,6 +5,7 @@ import {
   clearMemoryPluginState,
   getMemoryCapabilityRegistration,
   getMemoryRuntime,
+  hasActiveMemoryPublicArtifactsProvider,
   hasMemoryRuntime,
   listMemoryCorpusSupplements,
   listMemoryPromptSupplements,
@@ -160,6 +161,8 @@ describe("memory plugin state", () => {
   });
 
   it("lists active public memory artifacts in deterministic order", async () => {
+    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(false);
+
     registerMemoryCapability("memory-core", {
       publicArtifacts: {
         async listArtifacts() {
@@ -184,6 +187,8 @@ describe("memory plugin state", () => {
         },
       },
     });
+
+    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(true);
 
     await expect(listActiveMemoryPublicArtifacts({ cfg: {} as never })).resolves.toEqual([
       {
