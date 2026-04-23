@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { tryReadJson } from "../infra/json-files.js";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
+import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { extensionUsesSkippedScannerPath, isPathInside } from "../security/scan-paths.js";
 import { scanDirectoryWithSummary } from "../security/skill-scanner.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -265,6 +266,28 @@ function isTrustedHostOpenClawPath(params: {
   );
 }
 
+function isDirectNodeModulesSymlink(relativePath: string): boolean {
+  const segments = relativePath.split(/[\\/]+/).map((segment) => segment.trim().toLowerCase());
+  return segments.length >= 2 && segments[0] === "node_modules";
+}
+
+async function isTrustedHostOpenClawPath(resolvedTargetPath: string): Promise<boolean> {
+  const hostRoot = resolveOpenClawPackageRootSync({
+    argv1: process.argv[1],
+    moduleUrl: import.meta.url,
+    cwd: process.cwd(),
+  });
+  if (!hostRoot) {
+    return false;
+  }
+
+  const hostRootRealPath = await fs.realpath(hostRoot).catch(() => path.resolve(hostRoot));
+  return (
+    path.resolve(hostRootRealPath) === path.resolve(resolvedTargetPath) ||
+    isPathInside(hostRootRealPath, resolvedTargetPath)
+  );
+}
+
 async function inspectNodeModulesSymlinkTarget(params: {
   allowManagedNpmRootPackagePeerSymlinks?: boolean;
   rootRealPath: string;
@@ -299,6 +322,16 @@ async function inspectNodeModulesSymlinkTarget(params: {
         resolvedTargetPath,
         trustedHostOpenClawRootRealPath: params.trustedHostOpenClawRootRealPath,
       })
+    ) {
+      return {};
+    }
+    // Workspace plugins can carry package-manager-created links back to the
+    // trusted host package (for example openclaw and .bin/openclaw). Do not
+    // scan the host as plugin payload, but keep vendored or spoofed escaping
+    // node_modules symlinks fail-closed.
+    if (
+      isDirectNodeModulesSymlink(params.symlinkRelativePath) &&
+      (await isTrustedHostOpenClawPath(resolvedTargetPath))
     ) {
       return {};
     }
