@@ -19,6 +19,7 @@ export { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.j
 export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
 export {
   buildMemoryPromptSection as buildActiveMemoryPromptSection,
+  hasActiveMemoryPublicArtifactsProvider,
   listActiveMemoryPublicArtifacts,
   getMemoryCapabilityRegistration,
 } from "../plugins/memory-state.js";

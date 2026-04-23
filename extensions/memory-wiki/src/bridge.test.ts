@@ -198,6 +198,51 @@ describe("syncMemoryWikiBridgeSources", () => {
     });
   });
 
+  it("does not prune imported bridge pages when the public artifact provider is unavailable", async () => {
+    const workspaceDir = await createBridgeWorkspace("provider-unavailable-workspace");
+    const { rootDir: vaultDir, config } = await createVault({
+      rootDir: nextCaseRoot("provider-unavailable-vault"),
+      config: {
+        vaultMode: "bridge",
+        bridge: {
+          enabled: true,
+          indexMemoryRoot: true,
+          indexDailyNotes: false,
+          indexDreamReports: false,
+          followMemoryEvents: false,
+        },
+      },
+    });
+
+    await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "# Durable Memory\n", "utf8");
+    registerBridgeArtifacts([
+      {
+        kind: "memory-root",
+        workspaceDir,
+        relativePath: "MEMORY.md",
+        absolutePath: path.join(workspaceDir, "MEMORY.md"),
+        agentIds: ["main"],
+        contentType: "markdown",
+      },
+    ]);
+    const appConfig: OpenClawConfig = {
+      agents: {
+        list: [{ id: "main", default: true, workspace: workspaceDir }],
+      },
+    };
+
+    const first = await syncMemoryWikiBridgeSources({ config, appConfig });
+    const firstPagePath = first.pagePaths[0] ?? "";
+    await expect(fs.stat(path.join(vaultDir, firstPagePath))).resolves.toBeTruthy();
+
+    clearMemoryPluginState();
+    const second = await syncMemoryWikiBridgeSources({ config, appConfig });
+
+    expect(second.artifactCount).toBe(0);
+    expect(second.removedCount).toBe(0);
+    await expect(fs.stat(path.join(vaultDir, firstPagePath))).resolves.toBeTruthy();
+  });
+
   it("imports the public memory event journal when followMemoryEvents is enabled", async () => {
     const workspaceDir = await createBridgeWorkspace("events-workspace");
     const { rootDir: vaultDir, config } = await createVault({
