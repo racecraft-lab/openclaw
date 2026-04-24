@@ -49,4 +49,23 @@ struct ModelCatalogLoaderTests {
         let choices = try await ModelCatalogLoader.load(from: tmp.path)
         #expect(choices.isEmpty)
     }
+
+    @Test
+    func `load treats catalog as data not executable code`() async throws {
+        let src = """
+        export const MODELS = {
+          openai: {
+            "gpt-safe": { name: "GPT Safe", contextWindow: 128000 },
+          },
+        };
+        throw new Error("catalog code should not execute");
+        """
+        let tmp = FileManager().temporaryDirectory
+            .appendingPathComponent("models-\(UUID().uuidString).ts")
+        defer { try? FileManager().removeItem(at: tmp) }
+        try src.write(to: tmp, atomically: true, encoding: .utf8)
+
+        let choices = try await ModelCatalogLoader.load(from: tmp.path)
+        #expect(choices.map(\.id) == ["gpt-safe"])
+    }
 }
