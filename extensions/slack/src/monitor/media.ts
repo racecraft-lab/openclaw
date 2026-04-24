@@ -95,41 +95,6 @@ function createSlackMediaFetch(): FetchLike {
   };
 }
 
-/**
- * Fetches a URL with Authorization header while keeping same-origin redirects
- * authenticated and dropping auth once the redirect crosses origins.
- */
-export async function fetchWithSlackAuth(url: string, token: string): Promise<Response> {
-  const parsed = assertSlackFileUrl(url);
-  const authHeaders = createSlackAuthHeaders(token);
-
-  const initialRes = await fetch(parsed.href, {
-    headers: authHeaders,
-    redirect: "manual",
-  });
-
-  if (initialRes.status < 300 || initialRes.status >= 400) {
-    return initialRes;
-  }
-
-  const redirectUrl = initialRes.headers.get("location");
-  if (!redirectUrl) {
-    return initialRes;
-  }
-
-  const resolvedUrl = new URL(redirectUrl, parsed.href);
-  if (resolvedUrl.protocol !== "https:") {
-    return initialRes;
-  }
-  if (resolvedUrl.origin === parsed.origin) {
-    return fetch(resolvedUrl.toString(), {
-      headers: authHeaders,
-      redirect: "follow",
-    });
-  }
-  return fetch(resolvedUrl.toString(), { redirect: "follow" });
-}
-
 const SLACK_MEDIA_SSRF_POLICY = {
   allowedHostnames: ["*.slack.com", "*.slack-edge.com", "*.slack-files.com"],
   hostnameAllowlist: ["*.slack.com", "*.slack-edge.com", "*.slack-files.com"],
