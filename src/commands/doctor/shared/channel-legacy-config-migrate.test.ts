@@ -15,7 +15,7 @@ vi.mock("../../../channels/plugins/doctor-contract-api.js", () => ({
 }));
 
 vi.mock("../../../channels/plugins/bootstrap-registry.js", () => ({
-  listBootstrapChannelPluginIds: (...args: unknown[]) => listBootstrapChannelPluginIds(...args),
+  listBootstrapChannelPluginIds: () => listBootstrapChannelPluginIds(),
 }));
 
 let applyChannelDoctorCompatibilityMigrations: typeof import("./channel-legacy-config-migrate.js").applyChannelDoctorCompatibilityMigrations;
