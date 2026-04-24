@@ -133,6 +133,30 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Analyze
+        if: matrix.language != 'swift'
         uses: github/codeql-action/analyze@b25d0ebf40e5b63ee81e1bd6e5d2a12b7c2aeb61 # v4
         with:
           category: "/language:${{ matrix.language }}"
+
+      - name: Analyze Swift
+        if: matrix.language == 'swift'
+        uses: github/codeql-action/analyze@b25d0ebf40e5b63ee81e1bd6e5d2a12b7c2aeb61 # v4
+        with:
+          category: "/language:${{ matrix.language }}"
+          output: sarif-results
+          upload: failure-only
+
+      - name: Filter Swift dependency SARIF
+        if: matrix.language == 'swift'
+        uses: advanced-security/filter-sarif@83be8931196fc98d9c506ff10e17763fed75bd1b # main
+        with:
+          patterns: |
+            -apps/macos/.build/checkouts/**
+          input: sarif-results/swift.sarif
+          output: sarif-results/swift.sarif
+
+      - name: Upload Swift SARIF
+        if: matrix.language == 'swift'
+        uses: github/codeql-action/upload-sarif@b25d0ebf40e5b63ee81e1bd6e5d2a12b7c2aeb61 # v4
+        with:
+          sarif_file: sarif-results/swift.sarif
