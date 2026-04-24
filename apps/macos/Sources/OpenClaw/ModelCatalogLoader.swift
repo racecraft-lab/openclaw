@@ -1,5 +1,4 @@
 import Foundation
-import JavaScriptCore
 
 enum ModelCatalogLoader {
     static var defaultPath: String {
@@ -27,16 +26,7 @@ enum ModelCatalogLoader {
         }
         self.logger.debug("model catalog load start file=\(URL(fileURLWithPath: resolved.path).lastPathComponent)")
         let source = try String(contentsOfFile: resolved.path, encoding: .utf8)
-        let sanitized = self.sanitize(source: source)
-
-        let ctx = JSContext()
-        ctx?.exceptionHandler = { _, exception in
-            if let exception {
-                self.logger.warning("model catalog JS exception: \(exception)")
-            }
-        }
-        ctx?.evaluateScript(sanitized)
-        guard let rawModels = ctx?.objectForKeyedSubscript("MODELS")?.toDictionary() as? [String: Any] else {
+        guard let rawModels = try self.parseModels(source: source) else {
             self.logger.error("model catalog parse failed: MODELS missing")
             throw NSError(
                 domain: "ModelCatalogLoader",
@@ -138,22 +128,223 @@ enum ModelCatalogLoader {
         }
     }
 
-    private static func sanitize(source: String) -> String {
+    private static func parseModels(source: String) throws -> [String: Any]? {
+        guard let literal = self.extractModelsLiteral(source: source) else {
+            return [:]
+        }
+        let json = self.jsonFromObjectLiteral(literal)
+        guard let data = json.data(using: .utf8) else {
+            return nil
+        }
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private static func extractModelsLiteral(source: String) -> String? {
         guard let exportRange = source.range(of: "export const MODELS"),
               let firstBrace = source[exportRange.upperBound...].firstIndex(of: "{"),
-              let lastBrace = source.lastIndex(of: "}")
+              let lastBrace = self.matchingClosingBrace(in: source, from: firstBrace)
         else {
-            return "var MODELS = {}"
+            return nil
         }
-        var body = String(source[firstBrace...lastBrace])
-        body = body.replacingOccurrences(
-            of: #"(?m)\bsatisfies\s+[^,}\n]+"#,
-            with: "",
-            options: .regularExpression)
-        body = body.replacingOccurrences(
-            of: #"(?m)\bas\s+[^;,\n]+"#,
-            with: "",
-            options: .regularExpression)
-        return "var MODELS = \(body);"
+        return String(source[firstBrace...lastBrace])
+    }
+
+    private static func matchingClosingBrace(in source: String, from firstBrace: String.Index) -> String.Index? {
+        let chars = Array(source[firstBrace...])
+        var depth = 0
+        var index = 0
+        while index < chars.count {
+            let char = chars[index]
+            if char == "\"" || char == "'" {
+                index = self.indexAfterStringLiteral(chars, from: index)
+                continue
+            }
+            if char == "/", self.isLineComment(chars, at: index) {
+                index = self.indexAfterLineComment(chars, from: index)
+                continue
+            }
+            if char == "/", self.isBlockComment(chars, at: index) {
+                index = self.indexAfterBlockComment(chars, from: index)
+                continue
+            }
+            if char == "{" {
+                depth += 1
+            } else if char == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return source.index(firstBrace, offsetBy: index)
+                }
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    private static func jsonFromObjectLiteral(_ literal: String) -> String {
+        let chars = Array(literal)
+        var json = ""
+        var index = 0
+        while index < chars.count {
+            let char = chars[index]
+            if char == "\"" || char == "'" {
+                let (encoded, nextIndex) = self.readJSONString(chars, from: index)
+                json += encoded
+                index = nextIndex
+                continue
+            }
+            if char == "/", self.isLineComment(chars, at: index) {
+                index = self.indexAfterLineComment(chars, from: index)
+                continue
+            }
+            if char == "/", self.isBlockComment(chars, at: index) {
+                index = self.indexAfterBlockComment(chars, from: index)
+                continue
+            }
+            if char == "," {
+                if let next = self.nextSignificantIndex(chars, from: index + 1),
+                   chars[next] == "}" || chars[next] == "]" {
+                    index += 1
+                    continue
+                }
+                json.append(char)
+                index += 1
+                continue
+            }
+            if self.isIdentifierStart(char) {
+                let start = index
+                index += 1
+                while index < chars.count, self.isIdentifierPart(chars[index]) {
+                    index += 1
+                }
+                let identifier = String(chars[start..<index])
+                if let next = self.nextSignificantIndex(chars, from: index), chars[next] == ":" {
+                    json += "\"\(identifier)\""
+                    continue
+                }
+                if identifier == "as" || identifier == "satisfies" {
+                    index = self.indexAfterTypeAnnotation(chars, from: index)
+                    continue
+                }
+                json += identifier
+                continue
+            }
+            json.append(char)
+            index += 1
+        }
+        return json
+    }
+
+    private static func readJSONString(_ chars: [Character], from start: Int) -> (String, Int) {
+        let quote = chars[start]
+        var result = quote == "'" ? "\"" : String(quote)
+        var index = start + 1
+        while index < chars.count {
+            let char = chars[index]
+            if char == "\\" {
+                if index + 1 < chars.count {
+                    result.append(char)
+                    result.append(chars[index + 1])
+                    index += 2
+                    continue
+                }
+                result.append(char)
+                index += 1
+                continue
+            }
+            if char == quote {
+                result += "\""
+                return (result, index + 1)
+            }
+            if quote == "'", char == "\"" {
+                result += "\\\""
+            } else {
+                result.append(char)
+            }
+            index += 1
+        }
+        return (result, index)
+    }
+
+    private static func indexAfterStringLiteral(_ chars: [Character], from start: Int) -> Int {
+        let quote = chars[start]
+        var index = start + 1
+        while index < chars.count {
+            if chars[index] == "\\" {
+                index += 2
+                continue
+            }
+            if chars[index] == quote {
+                return index + 1
+            }
+            index += 1
+        }
+        return index
+    }
+
+    private static func indexAfterTypeAnnotation(_ chars: [Character], from start: Int) -> Int {
+        var index = start
+        while index < chars.count {
+            let char = chars[index]
+            if char == "," || char == "}" || char == "]" {
+                return index
+            }
+            index += 1
+        }
+        return index
+    }
+
+    private static func nextSignificantIndex(_ chars: [Character], from start: Int) -> Int? {
+        var index = start
+        while index < chars.count {
+            if chars[index].isWhitespace {
+                index += 1
+                continue
+            }
+            if chars[index] == "/", self.isLineComment(chars, at: index) {
+                index = self.indexAfterLineComment(chars, from: index)
+                continue
+            }
+            if chars[index] == "/", self.isBlockComment(chars, at: index) {
+                index = self.indexAfterBlockComment(chars, from: index)
+                continue
+            }
+            return index
+        }
+        return nil
+    }
+
+    private static func isLineComment(_ chars: [Character], at index: Int) -> Bool {
+        index + 1 < chars.count && chars[index + 1] == "/"
+    }
+
+    private static func isBlockComment(_ chars: [Character], at index: Int) -> Bool {
+        index + 1 < chars.count && chars[index + 1] == "*"
+    }
+
+    private static func indexAfterLineComment(_ chars: [Character], from start: Int) -> Int {
+        var index = start + 2
+        while index < chars.count, chars[index] != "\n" {
+            index += 1
+        }
+        return index
+    }
+
+    private static func indexAfterBlockComment(_ chars: [Character], from start: Int) -> Int {
+        var index = start + 2
+        while index + 1 < chars.count {
+            if chars[index] == "*", chars[index + 1] == "/" {
+                return index + 2
+            }
+            index += 1
+        }
+        return chars.count
+    }
+
+    private static func isIdentifierStart(_ char: Character) -> Bool {
+        char == "_" || char == "$" || char.isLetter
+    }
+
+    private static func isIdentifierPart(_ char: Character) -> Bool {
+        self.isIdentifierStart(char) || char.isNumber
     }
 }
