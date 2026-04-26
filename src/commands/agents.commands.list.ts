@@ -12,6 +12,7 @@ import type { AgentSummary } from "./agents.config.js";
 import { buildAgentSummaries } from "./agents.config.js";
 import {
   buildProviderStatusIndex,
+  buildProviderSummaryMetadataIndex,
   listProvidersForAgent,
   summarizeBindings,
 } from "./agents.providers.js";
@@ -101,6 +102,7 @@ export async function agentsListCommand(
     }
   }
 
+  const providerMetadata = buildProviderSummaryMetadataIndex(cfg);
   if (opts.providers) {
     await ensureCliPluginRegistryLoaded({ scope: "all" });
   }
@@ -108,7 +110,7 @@ export async function agentsListCommand(
 
   for (const summary of summaries) {
     const bindings = bindingMap.get(summary.id) ?? [];
-    const routes = summarizeBindings(cfg, bindings);
+    const routes = summarizeBindings(cfg, bindings, providerMetadata);
     if (routes.length > 0) {
       summary.routes = routes;
     } else if (summary.isDefault) {
@@ -121,6 +123,7 @@ export async function agentsListCommand(
         cfg,
         bindings,
         providerStatus,
+        providerMetadata,
       });
       if (providerLines.length > 0) {
         summary.providers = providerLines;

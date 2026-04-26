@@ -301,6 +301,12 @@ function canPromptForMessageTool(params: {
   return !params.toolsAllow?.length || params.toolsAllow.includes("message");
 }
 
+function hasExplicitCronDeliveryTarget(plan: CronDeliveryPlan): boolean {
+  return Boolean(
+    (plan.channel && plan.channel !== "last") || plan.to || plan.threadId || plan.accountId,
+  );
+}
+
 async function resolveCronDeliveryContext(params: {
   cfg: OpenClawConfig;
   job: CronJob;
@@ -321,6 +327,24 @@ async function resolveCronDeliveryContext(params: {
       deliveryPlan,
       deliveryRequested: deliveryPlan.requested,
       resolvedDelivery,
+      toolPolicy: resolveCronToolPolicy({
+        deliveryMode: deliveryPlan.mode,
+      }),
+    };
+  }
+  if (deliveryPlan.mode === "none" && !hasExplicitCronDeliveryTarget(deliveryPlan)) {
+    return {
+      deliveryPlan,
+      deliveryRequested: false,
+      resolvedDelivery: {
+        ok: false as const,
+        channel: undefined,
+        to: undefined,
+        accountId: undefined,
+        threadId: undefined,
+        mode: "implicit" as const,
+        error: new Error("delivery is disabled"),
+      },
       toolPolicy: resolveCronToolPolicy({
         deliveryMode: deliveryPlan.mode,
       }),
@@ -408,6 +432,7 @@ type PreparedCronRunContext = {
   deliveryPlan: CronDeliveryPlan;
   resolvedDelivery: ResolvedCronDeliveryTarget;
   deliveryRequested: boolean;
+  suppressExecNotifyOnExit: boolean;
   toolPolicy: ReturnType<typeof resolveCronToolPolicy>;
   skillsSnapshot: SkillSnapshot;
   liveSelection: CronLiveSelection;
@@ -696,6 +721,7 @@ async function prepareCronRunContext(params: {
       deliveryPlan,
       resolvedDelivery,
       deliveryRequested,
+      suppressExecNotifyOnExit: deliveryPlan.mode === "none",
       toolPolicy,
       skillsSnapshot,
       liveSelection,
@@ -977,6 +1003,7 @@ export async function runCronIsolatedAgentTurn(params: {
       isAborted,
       thinkLevel: prepared.context.thinkLevel,
       timeoutMs: prepared.context.timeoutMs,
+      suppressExecNotifyOnExit: prepared.context.suppressExecNotifyOnExit,
     });
     if (isAborted()) {
       return prepared.context.withRunSession({ status: "error", error: abortReason() });

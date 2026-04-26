@@ -59,6 +59,8 @@ Common non-interactive add surfaces include:
 - Tlon fields: `--ship`, `--url`, `--code`, `--group-channels`, `--dm-allowlist`, `--auto-discover-channels`
 - `--use-env` for default-account env-backed auth where supported
 
+If a channel plugin needs to be installed during a flag-driven add command, OpenClaw uses the channel's default install source without opening the interactive plugin install prompt.
+
 When you run `openclaw channels add` without flags, the interactive wizard can prompt:
 
 - account ids per selected channel
@@ -129,3 +131,8 @@ Notes:
 - Use `--kind user|group|auto` to force the target type.
 - Resolution prefers active matches when multiple entries share the same name.
 - `channels resolve` is read-only. If a selected account is configured via SecretRef but that credential is unavailable in the current command path, the command returns degraded unresolved results with notes instead of aborting the entire run.
+
+## Related
+
+- [CLI reference](/cli)
+- [Channels overview](/channels)

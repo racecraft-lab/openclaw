@@ -21,6 +21,7 @@ export {
   buildMemoryPromptSection as buildActiveMemoryPromptSection,
   hasActiveMemoryPublicArtifactsProvider,
   listActiveMemoryPublicArtifacts,
+  getMemoryCapabilityRegistration,
 } from "../plugins/memory-state.js";
 export { parseAgentSessionKey } from "../routing/session-key.js";
 export type { OpenClawConfig } from "../config/config.js";
