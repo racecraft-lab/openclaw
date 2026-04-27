@@ -110,18 +110,18 @@ export async function agentsListCommand(
     await ensureCliPluginRegistryLoaded({ scope: "all" });
   }
   const providerStatus = includeProviderDetails ? await buildProviderStatusIndex(cfg) : null;
-  const providerMetadata = includeProviderDetails ? buildProviderSummaryMetadataIndex(cfg) : null;
+  const providerMetadata = buildProviderSummaryMetadataIndex(cfg);
 
   for (const summary of summaries) {
     const bindings = bindingMap.get(summary.id) ?? [];
-    if (includeProviderDetails && providerStatus && providerMetadata) {
-      const routes = summarizeBindings(cfg, bindings, providerMetadata);
-      if (routes.length > 0) {
-        summary.routes = routes;
-      } else if (summary.isDefault) {
-        summary.routes = ["default (no explicit rules)"];
-      }
+    const routes = summarizeBindings(cfg, bindings, providerMetadata);
+    if (routes.length > 0) {
+      summary.routes = routes;
+    } else if (summary.isDefault) {
+      summary.routes = ["default (no explicit rules)"];
+    }
 
+    if (includeProviderDetails && providerStatus) {
       const providerLines = listProvidersForAgent({
         summaryIsDefault: summary.isDefault,
         cfg,

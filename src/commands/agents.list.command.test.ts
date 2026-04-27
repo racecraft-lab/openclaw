@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   describeBinding: vi.fn((binding: { agentId: string }) => `binding:${binding.agentId}`),
   ensureCliPluginRegistryLoaded: vi.fn(async () => {}),
   buildProviderStatusIndex: vi.fn(),
+  buildProviderSummaryMetadataIndex: vi.fn(),
   listProvidersForAgent: vi.fn(),
   summarizeBindings: vi.fn(),
   writeRuntimeJson: vi.fn(),
@@ -48,6 +49,9 @@ vi.mock("../cli/plugin-registry-loader.js", () => ({
 vi.mock("./agents.providers.js", () => ({
   buildProviderStatusIndex: (...args: Parameters<typeof mocks.buildProviderStatusIndex>) =>
     mocks.buildProviderStatusIndex(...args),
+  buildProviderSummaryMetadataIndex: (
+    ...args: Parameters<typeof mocks.buildProviderSummaryMetadataIndex>
+  ) => mocks.buildProviderSummaryMetadataIndex(...args),
   listProvidersForAgent: (...args: Parameters<typeof mocks.listProvidersForAgent>) =>
     mocks.listProvidersForAgent(...args),
   summarizeBindings: (...args: Parameters<typeof mocks.summarizeBindings>) =>
@@ -90,6 +94,7 @@ describe("agentsListCommand", () => {
     mocks.summarizeBindings.mockReturnValue([]);
     mocks.ensureCliPluginRegistryLoaded.mockResolvedValue(undefined);
     mocks.buildProviderStatusIndex.mockResolvedValue(new Map());
+    mocks.buildProviderSummaryMetadataIndex.mockReturnValue(new Map());
     mocks.listProvidersForAgent.mockReturnValue([]);
   });
 
