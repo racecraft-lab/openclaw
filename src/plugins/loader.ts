@@ -1547,6 +1547,13 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
         flushPlanResolver: cached.memoryFlushPlanResolver,
         runtime: cached.memoryRuntime,
       });
+      if (!shouldActivate) {
+        mergeMemoryPluginState({
+          capability: cached.state.memoryCapability,
+          corpusSupplements: cached.state.memoryCorpusSupplements,
+          promptSupplements: cached.state.memoryPromptSupplements,
+        });
+      }
       if (shouldActivate) {
         restoreRegisteredAgentHarnesses(cached.state.agentHarnesses);
         restorePluginCommands(cached.state.commands ?? []);
