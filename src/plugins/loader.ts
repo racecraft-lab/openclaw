@@ -1505,9 +1505,9 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     if (cached) {
       if (!shouldActivate) {
         mergeMemoryPluginState({
-          capability: cached.memoryCapability,
-          corpusSupplements: cached.memoryCorpusSupplements,
-          promptSupplements: cached.memoryPromptSupplements,
+          capability: cached.state.memoryCapability,
+          corpusSupplements: cached.state.memoryCorpusSupplements,
+          promptSupplements: cached.state.memoryPromptSupplements,
         });
       }
       if (shouldActivate) {
