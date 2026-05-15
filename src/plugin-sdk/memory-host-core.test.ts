@@ -4,12 +4,12 @@ import {
   registerMemoryCapability,
   registerMemoryPromptSection,
 } from "../plugins/memory-state.js";
+import * as memoryCoreAlias from "./memory-core.js";
 import {
   buildActiveMemoryPromptSection,
-  hasActiveMemoryPublicArtifactsProvider,
+  getMemoryCapabilityRegistration,
   listActiveMemoryPublicArtifacts,
 } from "./memory-host-core.js";
-import * as memoryCoreAlias from "./memory-core.js";
 
 describe("memory-host-core helpers", () => {
   afterEach(() => {
@@ -32,7 +32,7 @@ describe("memory-host-core helpers", () => {
   });
 
   it("exposes active memory public artifacts for companion plugins", async () => {
-    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(false);
+    expect(getMemoryCapabilityRegistration()?.capability?.publicArtifacts != null).toBe(false);
 
     registerMemoryCapability("memory-core", {
       publicArtifacts: {
@@ -51,7 +51,7 @@ describe("memory-host-core helpers", () => {
       },
     });
 
-    expect(hasActiveMemoryPublicArtifactsProvider()).toBe(true);
+    expect(getMemoryCapabilityRegistration()?.capability?.publicArtifacts != null).toBe(true);
 
     await expect(listActiveMemoryPublicArtifacts({ cfg: {} as never })).resolves.toEqual([
       {

@@ -497,6 +497,16 @@ function applyConfigForOpenClawTarget(
     setPathCreateStrict(config, ["gateway", "mode"], "remote");
     setPathCreateStrict(config, ["gateway", "remote", "url"], "wss://gateway.example");
   }
+  if (entry.id === "mcp.servers.*.env.*") {
+    setPathCreateStrict(config, ["mcp", "servers", wildcardToken, "command"], "test-mcp");
+  }
+  if (entry.id === "mcp.servers.*.headers.*") {
+    setPathCreateStrict(
+      config,
+      ["mcp", "servers", wildcardToken, "url"],
+      "https://example.com/mcp",
+    );
+  }
   if (entry.id === "channels.telegram.webhookSecret") {
     setPathCreateStrict(config, ["channels", "telegram", "webhookUrl"], "https://example.com/hook");
   }
