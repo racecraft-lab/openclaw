@@ -335,10 +335,7 @@ export function restoreMemoryPluginState(state: MemoryPluginState): void {
       }
     : undefined;
   memoryPluginState.corpusSupplements = [...state.corpusSupplements];
-  memoryPluginState.promptBuilder = state.promptBuilder;
   memoryPluginState.promptSupplements = [...state.promptSupplements];
-  memoryPluginState.flushPlanResolver = state.flushPlanResolver;
-  memoryPluginState.runtime = state.runtime;
 }
 
 /**

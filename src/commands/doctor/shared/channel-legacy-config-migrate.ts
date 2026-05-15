@@ -7,11 +7,6 @@ import {
 } from "../../../plugins/doctor-contract-registry.js";
 import { isRecord } from "./legacy-config-record-shared.js";
 
-type ChannelDoctorCompatibilityMutation = {
-  config: OpenClawConfig;
-  changes: string[];
-};
-
 function collectRelevantDoctorChannelIds(raw: unknown): string[] {
   const channels = isRecord(raw) && isRecord(raw.channels) ? raw.channels : null;
   if (!channels) {
@@ -22,9 +17,7 @@ function collectRelevantDoctorChannelIds(raw: unknown): string[] {
     .toSorted();
 }
 
-function resolveBundledChannelCompatibilityNormalizer(
-  channelId: string,
-): ChannelDoctorCompatibilityNormalizer | undefined {
+function resolveBundledChannelCompatibilityNormalizer(channelId: string) {
   const contractNormalizer =
     loadBundledChannelDoctorContractApi(channelId)?.normalizeCompatibilityConfig;
   if (typeof contractNormalizer === "function") {

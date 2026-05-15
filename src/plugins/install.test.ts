@@ -2356,8 +2356,6 @@ describe("installPluginFromArchive", () => {
         !path.relative(sourcePluginDir, entryPath).split(path.sep).includes("node_modules"),
     });
     vi.mocked(resolveOpenClawPackageRootSync).mockReturnValue(process.cwd());
-    const pluginDir = path.resolve(process.cwd(), "extensions", "qa-matrix");
-    vi.mocked(resolveOpenClawPackageRootSync).mockReturnValue(process.cwd());
 
     const scanResult = await installSecurityScan.scanPackageInstallSource({
       extensions: ["./index.ts"],

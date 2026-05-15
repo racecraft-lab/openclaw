@@ -1,13 +1,9 @@
+import { resolveHttpMcpServerLaunchConfig } from "../agents/mcp-http.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { MediaUnderstandingModelConfig } from "../config/types.tools.js";
-import {
-  resolveHttpMcpServerLaunchConfig,
-  type HttpMcpServerLaunchResult,
-} from "../agents/mcp-http.js";
-import {
-  resolveStdioMcpServerLaunchConfig,
-  type StdioMcpServerLaunchResult,
-} from "../agents/mcp-stdio.js";
+type HttpMcpServerLaunchResult = ReturnType<typeof resolveHttpMcpServerLaunchConfig>;
+import { resolveStdioMcpServerLaunchConfig } from "../agents/mcp-stdio.js";
+type StdioMcpServerLaunchResult = ReturnType<typeof resolveStdioMcpServerLaunchConfig>;
 import {
   resolveConfiguredMediaEntryCapabilities,
   resolveEffectiveMediaEntryCapabilities,

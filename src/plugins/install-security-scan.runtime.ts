@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { tryReadJson } from "../infra/json-files.js";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
-import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { extensionUsesSkippedScannerPath, isPathInside } from "../security/scan-paths.js";
 import { scanDirectoryWithSummary } from "../security/skill-scanner.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -271,23 +270,6 @@ function isDirectNodeModulesSymlink(relativePath: string): boolean {
   return segments.length >= 2 && segments[0] === "node_modules";
 }
 
-async function isTrustedHostOpenClawPath(resolvedTargetPath: string): Promise<boolean> {
-  const hostRoot = resolveOpenClawPackageRootSync({
-    argv1: process.argv[1],
-    moduleUrl: import.meta.url,
-    cwd: process.cwd(),
-  });
-  if (!hostRoot) {
-    return false;
-  }
-
-  const hostRootRealPath = await fs.realpath(hostRoot).catch(() => path.resolve(hostRoot));
-  return (
-    path.resolve(hostRootRealPath) === path.resolve(resolvedTargetPath) ||
-    isPathInside(hostRootRealPath, resolvedTargetPath)
-  );
-}
-
 async function inspectNodeModulesSymlinkTarget(params: {
   allowManagedNpmRootPackagePeerSymlinks?: boolean;
   rootRealPath: string;
@@ -331,7 +313,10 @@ async function inspectNodeModulesSymlinkTarget(params: {
     // node_modules symlinks fail-closed.
     if (
       isDirectNodeModulesSymlink(params.symlinkRelativePath) &&
-      (await isTrustedHostOpenClawPath(resolvedTargetPath))
+      isTrustedHostOpenClawPath({
+        resolvedTargetPath,
+        trustedHostOpenClawRootRealPath: params.trustedHostOpenClawRootRealPath,
+      })
     ) {
       return {};
     }

@@ -1535,18 +1535,6 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       options,
     });
     if (cached) {
-      restoreRegisteredAgentHarnesses(cached.agentHarnesses);
-      restoreRegisteredCompactionProviders(cached.compactionProviders);
-      restoreDetachedTaskLifecycleRuntimeRegistration(cached.detachedTaskRuntimeRegistration);
-      restoreRegisteredMemoryEmbeddingProviders(cached.memoryEmbeddingProviders);
-      mergeMemoryPluginState({
-        capability: cached.memoryCapability,
-        corpusSupplements: cached.memoryCorpusSupplements,
-        promptBuilder: cached.memoryPromptBuilder,
-        promptSupplements: cached.memoryPromptSupplements,
-        flushPlanResolver: cached.memoryFlushPlanResolver,
-        runtime: cached.memoryRuntime,
-      });
       if (!shouldActivate) {
         mergeMemoryPluginState({
           capability: cached.state.memoryCapability,

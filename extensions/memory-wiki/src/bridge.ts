@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   getMemoryCapabilityRegistration,
-  hasActiveMemoryPublicArtifactsProvider,
   listActiveMemoryPublicArtifacts,
   type MemoryPluginPublicArtifact,
 } from "openclaw/plugin-sdk/memory-host-core";
@@ -223,10 +222,8 @@ export async function syncMemoryWikiBridgeSources(params: {
     };
   }
 
-  const hasPublicArtifactsProvider = hasActiveMemoryPublicArtifactsProvider();
-  const publicArtifacts = hasPublicArtifactsProvider
-    ? await listActiveMemoryPublicArtifacts({ cfg: params.appConfig })
-    : [];
+  const publicArtifacts = await listActiveMemoryPublicArtifacts({ cfg: params.appConfig });
+  const hasPublicArtifactsProvider = publicArtifacts.length > 0;
   const state = await readMemoryWikiSourceSyncState(params.config.vault.path);
   if (!hasPublicArtifactsProvider) {
     return {
