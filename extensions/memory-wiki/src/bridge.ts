@@ -222,8 +222,11 @@ export async function syncMemoryWikiBridgeSources(params: {
     };
   }
 
-  const publicArtifacts = await listActiveMemoryPublicArtifacts({ cfg: params.appConfig });
-  const hasPublicArtifactsProvider = publicArtifacts.length > 0;
+  const hasPublicArtifactsProvider =
+    getMemoryCapabilityRegistration()?.capability?.publicArtifacts != null;
+  const publicArtifacts = hasPublicArtifactsProvider
+    ? await listActiveMemoryPublicArtifacts({ cfg: params.appConfig })
+    : [];
   const state = await readMemoryWikiSourceSyncState(params.config.vault.path);
   if (!hasPublicArtifactsProvider) {
     return {
