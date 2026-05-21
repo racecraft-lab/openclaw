@@ -23,6 +23,18 @@ const REQUIRED_BOOTSTRAP_WORKSPACE_FILES = [
   "BOOTSTRAP.md",
 ];
 
+export const WORKSPACE_BOOTSTRAP_SMOKE_ARGS = [
+  "onboard",
+  "--non-interactive",
+  "--accept-risk",
+  "--skip-channels",
+  "--skip-daemon",
+  "--skip-health",
+  "--skip-hooks",
+  "--skip-search",
+  "--skip-skills",
+  "--skip-ui",
+];
 const WORKSPACE_BOOTSTRAP_SMOKE_TIMEOUT_MS = 15_000;
 const SAFE_UNIX_SMOKE_PATH = "/usr/bin:/bin";
 
@@ -102,19 +114,14 @@ export function runInstalledWorkspaceBootstrapSmoke(params) {
   let combinedOutput = "";
   try {
     try {
+      const workspaceDir = join(homeDir, ".openclaw", "workspace");
       execFileSync(
         process.execPath,
         [
           join(params.packageRoot, "openclaw.mjs"),
-          "agent",
-          "--message",
-          "workspace bootstrap smoke",
-          "--session-id",
-          "workspace-bootstrap-smoke",
-          "--local",
-          "--timeout",
-          "1",
-          "--json",
+          ...WORKSPACE_BOOTSTRAP_SMOKE_ARGS,
+          "--workspace",
+          workspaceDir,
         ],
         {
           cwd,

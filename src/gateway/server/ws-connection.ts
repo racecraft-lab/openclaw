@@ -383,8 +383,14 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       if (!client) {
         const isExpectedStartupRetryClose =
           closeCause === GATEWAY_STARTUP_PENDING_CLOSE_CAUSE && code === GATEWAY_STARTUP_CLOSE_CODE;
+        const isClientAbortBeforeConnect =
+          handshakeState === "pending" && !closeCause && code === 1006 && !lastFrameType;
+        const isAlreadyLoggedUnauthorizedClose = closeCause === "unauthorized";
         const logFn =
-          isNoisySwiftPmHelperClose(requestUserAgent, remoteAddr) || isExpectedStartupRetryClose
+          isNoisySwiftPmHelperClose(requestUserAgent, remoteAddr) ||
+          isExpectedStartupRetryClose ||
+          isClientAbortBeforeConnect ||
+          isAlreadyLoggedUnauthorizedClose
             ? logWsControl.debug
             : logWsControl.warn;
         logFn(

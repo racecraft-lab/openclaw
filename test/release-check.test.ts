@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { listBundledPluginPackArtifacts } from "../scripts/lib/bundled-plugin-build-entries.mjs";
 import { listPluginSdkDistArtifacts } from "../scripts/lib/plugin-sdk-entries.mjs";
 import {
+  WORKSPACE_BOOTSTRAP_SMOKE_ARGS,
   WORKSPACE_TEMPLATE_PACK_PATHS,
   createWorkspaceBootstrapSmokeEnv,
 } from "../scripts/lib/workspace-bootstrap-smoke.mjs";
@@ -160,6 +161,21 @@ describe("packed CLI smoke", () => {
 });
 
 describe("workspace bootstrap smoke", () => {
+  it("creates workspace templates through onboarding without running a model", () => {
+    expect(WORKSPACE_BOOTSTRAP_SMOKE_ARGS).toEqual([
+      "onboard",
+      "--non-interactive",
+      "--accept-risk",
+      "--skip-channels",
+      "--skip-daemon",
+      "--skip-health",
+      "--skip-hooks",
+      "--skip-search",
+      "--skip-skills",
+      "--skip-ui",
+    ]);
+  });
+
   it("runs with a sterile env instead of maintainer provider credentials", () => {
     expect(
       createWorkspaceBootstrapSmokeEnv(

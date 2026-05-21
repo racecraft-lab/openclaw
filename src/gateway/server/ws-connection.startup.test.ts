@@ -161,4 +161,67 @@ describe("attachGatewayWsConnectionHandler startup readiness", () => {
       expect.anything(),
     );
   });
+
+  it("logs client aborts before connect at debug level", () => {
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const wss = {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        listeners.set(event, handler);
+      }),
+    } as unknown as WebSocketServer;
+    const socket = Object.assign(new EventEmitter(), {
+      _socket: {
+        remoteAddress: "127.0.0.1",
+        remotePort: 1234,
+        localAddress: "127.0.0.1",
+        localPort: 5678,
+      },
+      send: vi.fn(),
+      close: vi.fn(),
+    });
+    const upgradeReq = {
+      headers: {
+        host: "hal.boreal-fir.ts.net",
+        origin: "https://hal.boreal-fir.ts.net:3000",
+        "user-agent": "Chrome",
+      },
+      socket: { localAddress: "127.0.0.1" },
+    };
+    const logWsControl = createLogger();
+
+    attachGatewayWsConnectionHandler({
+      wss,
+      clients: new Set(),
+      preauthConnectionBudget: { release: vi.fn() } as never,
+      port: 18789,
+      resolvedAuth: { mode: "token", allowTailscale: true },
+      isStartupPending: () => false,
+      gatewayMethods: [],
+      events: [],
+      refreshHealthSnapshot: vi.fn(async () => ({}) as never),
+      logGateway: createLogger() as never,
+      logHealth: createLogger() as never,
+      logWsControl: logWsControl as never,
+      extraHandlers: {},
+      broadcast: vi.fn(),
+      buildRequestContext: () => createRequestContext() as never,
+    });
+
+    const onConnection = listeners.get("connection");
+    expect(onConnection).toBeTypeOf("function");
+    onConnection?.(socket, upgradeReq);
+    socket.emit("close", 1006, Buffer.from(""));
+
+    expect(logWsControl.debug).toHaveBeenCalledWith(
+      expect.stringContaining("closed before connect"),
+      expect.objectContaining({
+        handshake: "pending",
+        durationMs: expect.any(Number),
+      }),
+    );
+    expect(logWsControl.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("closed before connect"),
+      expect.anything(),
+    );
+  });
 });
