@@ -58,6 +58,8 @@ export function createWorkspaceBootstrapSmokeEnv(env, homeDir, overrides = {}) {
     OPENCLAW_SUPPRESS_NOTES: "1",
     OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
     OPENCLAW_DISABLE_BUNDLED_ENTRY_SOURCE_FALLBACK: "1",
+    OPENCLAW_GATEWAY_PORT: "9",
+    OPENCLAW_LOG_LEVEL: "silent",
     AWS_EC2_METADATA_DISABLED: "true",
     AWS_SHARED_CREDENTIALS_FILE: join(homeDir, ".aws", "credentials"),
     AWS_CONFIG_FILE: join(homeDir, ".aws", "config"),

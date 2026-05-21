@@ -19,10 +19,12 @@ describe("release-check", () => {
       const config = JSON.parse(
         readFileSync(join(homeDir, ".openclaw", "openclaw.json"), "utf8"),
       ) as {
+        meta?: Record<string, unknown>;
         channels?: Record<string, unknown>;
         plugins?: { entries?: Record<string, unknown> };
       };
 
+      expect(config.meta).toEqual({});
       expect(config.channels).toHaveProperty("matrix");
       const pluginEntries = requirePluginEntries(config);
       expect(pluginEntries).toHaveProperty("matrix");

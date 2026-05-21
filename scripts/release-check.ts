@@ -306,6 +306,8 @@ export function createPackedCliSmokeEnv(
     AWS_SHARED_CREDENTIALS_FILE: homeDir ? join(homeDir, ".aws", "credentials") : undefined,
     AWS_CONFIG_FILE: homeDir ? join(homeDir, ".aws", "config") : undefined,
     OPENCLAW_DISABLE_BUNDLED_ENTRY_SOURCE_FALLBACK: "1",
+    OPENCLAW_GATEWAY_PORT: "9",
+    OPENCLAW_LOG_LEVEL: "silent",
     OPENCLAW_NO_ONBOARD: "1",
     OPENCLAW_SERVICE_REPAIR_POLICY: "external",
     OPENCLAW_SUPPRESS_NOTES: "1",
@@ -393,6 +395,7 @@ export function writePackedBundledPluginActivationConfig(homeDir: string): void 
     configPath,
     `${JSON.stringify(
       {
+        meta: {},
         agents: {
           defaults: {
             model: { primary: "openai/gpt-5.5" },
