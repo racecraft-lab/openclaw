@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
@@ -28,6 +29,14 @@ function derivePackageRootFromExtensionsDir(extensionsDir: string): string {
   return parentDir;
 }
 
+function resolveExistingRealpath(targetPath: string): string {
+  try {
+    return fs.realpathSync.native(targetPath);
+  } catch {
+    return targetPath;
+  }
+}
+
 export function resolveBundledChannelRootScope(
   env: NodeJS.ProcessEnv = process.env,
 ): BundledChannelRootScope {
@@ -38,7 +47,7 @@ export function resolveBundledChannelRootScope(
       cacheKey: OPENCLAW_PACKAGE_ROOT,
     };
   }
-  const resolvedPluginsDir = path.resolve(bundledPluginsDir);
+  const resolvedPluginsDir = resolveExistingRealpath(path.resolve(bundledPluginsDir));
   return {
     packageRoot:
       path.basename(resolvedPluginsDir) === "extensions"

@@ -53,6 +53,29 @@ afterEach(() => {
   vi.doUnmock("./bundled-ids.js");
 });
 
+describe("bundled channel root scope", () => {
+  it("canonicalizes symlinked bundled plugin dirs before deriving boundaries", async () => {
+    const targetRoot = makeBundledRoot("openclaw-bundled-target-");
+    const linkRoot = path.join(os.tmpdir(), `openclaw-bundled-link-${process.pid}-${Date.now()}`);
+    tempDirs.push(linkRoot);
+    fs.symlinkSync(targetRoot.root, linkRoot, "dir");
+
+    const bundledRoot = await importFreshModule<typeof import("./bundled-root.js")>(
+      import.meta.url,
+      "./bundled-root.js?scope=symlink-root",
+    );
+
+    const scope = bundledRoot.resolveBundledChannelRootScope({
+      ...process.env,
+      OPENCLAW_BUNDLED_PLUGINS_DIR: path.join(linkRoot, "dist", "extensions"),
+    });
+
+    expect(scope.pluginsDir).toBe(fs.realpathSync.native(targetRoot.pluginsDir));
+    expect(scope.cacheKey).toBe(fs.realpathSync.native(targetRoot.pluginsDir));
+    expect(scope.packageRoot).toBe(fs.realpathSync.native(targetRoot.root));
+  });
+});
+
 describe("bundled root-aware plugin lookups", () => {
   it("reads bundled channel ids from the active bundled root without re-importing", async () => {
     const rootA = makeBundledRoot("openclaw-bundled-ids-a-");
