@@ -188,6 +188,7 @@ const LINE_RULES: LineRule[] = [
 
 const STANDARD_PORTS = new Set([80, 443, 8080, 8443, 3000]);
 const NETWORK_SEND_CONTEXT_PATTERN = /\bfetch\s*\(|\bpost\s*\(|\.\s*post\s*\(|http\.request\s*\(/i;
+const SUPPRESSION_DIRECTIVE_PATTERN = /openclaw-scan-ignore\s+([a-z0-9_-]+)/gi;
 
 const SOURCE_RULES: SourceRule[] = [
   {
@@ -307,6 +308,17 @@ function stripCommentsForHeuristics(source: string): string {
   return stripped;
 }
 
+function collectSuppressedRuleIds(source: string): Set<string> {
+  const suppressed = new Set<string>();
+  for (const match of source.matchAll(SUPPRESSION_DIRECTIVE_PATTERN)) {
+    const ruleId = match[1]?.trim();
+    if (ruleId) {
+      suppressed.add(ruleId);
+    }
+  }
+  return suppressed;
+}
+
 function findSourceRuleMatch(params: {
   rule: SourceRule;
   source: string;
@@ -348,10 +360,14 @@ export function scanSource(source: string, filePath: string): SkillScanFinding[]
   const lines = source.split("\n");
   const heuristicSource = stripCommentsForHeuristics(source);
   const heuristicLines = heuristicSource.split("\n");
+  const suppressedRuleIds = collectSuppressedRuleIds(source);
   const matchedLineRules = new Set<string>();
 
   // --- Line rules ---
   for (const rule of LINE_RULES) {
+    if (suppressedRuleIds.has(rule.ruleId)) {
+      continue;
+    }
     if (matchedLineRules.has(rule.ruleId)) {
       continue;
     }
@@ -396,6 +412,9 @@ export function scanSource(source: string, filePath: string): SkillScanFinding[]
   // --- Source rules ---
   const matchedSourceRules = new Set<string>();
   for (const rule of SOURCE_RULES) {
+    if (suppressedRuleIds.has(rule.ruleId)) {
+      continue;
+    }
     // Allow multiple findings for different messages with the same ruleId
     // but deduplicate exact (ruleId+message) combos
     const ruleKey = `${rule.ruleId}::${rule.message}`;

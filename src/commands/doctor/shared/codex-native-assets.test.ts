@@ -105,6 +105,24 @@ describe("scanCodexNativeAssets", () => {
       }),
     ).resolves.toStrictEqual([]);
   });
+
+  it("allows managed services to skip personal Codex CLI asset scans explicitly", async () => {
+    const root = await makeTempRoot();
+    const codexHome = path.join(root, ".codex");
+    await writeFile(path.join(codexHome, "skills", "tweet-helper", "SKILL.md"));
+    await writeFile(path.join(root, ".agents", "skills", "agent-helper", "SKILL.md"));
+
+    await expect(
+      scanCodexNativeAssets({
+        cfg: codexConfig(),
+        env: {
+          CODEX_HOME: codexHome,
+          HOME: root,
+          OPENCLAW_DOCTOR_IGNORE_CODEX_NATIVE_ASSETS: "1",
+        },
+      }),
+    ).resolves.toStrictEqual([]);
+  });
 });
 
 describe("collectCodexNativeAssetWarnings", () => {

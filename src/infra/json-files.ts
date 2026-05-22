@@ -1,4 +1,5 @@
 import "./fs-safe-defaults.js";
+import { writeJson as writeJsonBase } from "@openclaw/fs-safe/json";
 import { replaceFileAtomic } from "./replace-file.js";
 
 export {
@@ -15,8 +16,6 @@ export {
   tryReadJson as readJsonFile,
   tryReadJsonSync,
   tryReadJsonSync as readJsonFileSync,
-  writeJson,
-  writeJson as writeJsonAtomic,
   writeJsonSync,
 } from "@openclaw/fs-safe/json";
 export { createAsyncLock } from "@openclaw/fs-safe/advanced";
@@ -28,6 +27,21 @@ export type WriteTextAtomicOptions = {
   durable?: boolean;
 };
 
+export type WriteJsonAtomicOptions = WriteTextAtomicOptions;
+
+export async function writeJson(
+  filePath: string,
+  value: unknown,
+  options?: WriteJsonAtomicOptions,
+): Promise<void> {
+  await writeJsonBase(filePath, value, {
+    ...options,
+    dirMode: options?.dirMode ?? 0o700,
+  });
+}
+
+export const writeJsonAtomic = writeJson;
+
 export async function writeTextAtomic(
   filePath: string,
   content: string,
@@ -38,7 +52,7 @@ export async function writeTextAtomic(
     filePath,
     content: payload,
     mode: options?.mode ?? 0o600,
-    dirMode: options?.dirMode ?? 0o777 & ~process.umask(),
+    dirMode: options?.dirMode ?? 0o700,
     copyFallbackOnPermissionError: true,
     syncTempFile: options?.durable !== false,
     syncParentDir: options?.durable !== false,

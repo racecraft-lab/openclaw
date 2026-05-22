@@ -10,6 +10,7 @@ import { resolveGatewayAuth } from "../gateway/auth.js";
 import { isLoopbackHost, resolveGatewayBindHost } from "../gateway/net.js";
 import { resolveExecPolicyScopeSnapshot } from "../infra/exec-approvals-effective.js";
 import { loadExecApprovals, type ExecAsk, type ExecSecurity } from "../infra/exec-approvals.js";
+import { shouldAuditPlaintextMcpValue } from "../secrets/mcp-target-sensitivity.js";
 import { isLikelySensitiveModelProviderHeaderName } from "../secrets/model-provider-header-policy.js";
 import { hasConfiguredPlaintextSecretValue } from "../secrets/secret-value.js";
 import { discoverConfigSecretTargets } from "../secrets/target-registry.js";
@@ -194,6 +195,17 @@ function collectPlaintextConfigSecretWarnings(cfg: OpenClawConfig): string[] {
     if (
       target.entry.id === "models.providers.*.headers.*" &&
       !isLikelySensitiveModelProviderHeaderName(target.pathSegments.at(-1) ?? "")
+    ) {
+      continue;
+    }
+    if (
+      (target.entry.id === "mcp.servers.*.env.*" ||
+        target.entry.id === "mcp.servers.*.headers.*") &&
+      !shouldAuditPlaintextMcpValue({
+        kind: target.entry.id === "mcp.servers.*.env.*" ? "env" : "header",
+        name: target.pathSegments.at(-1) ?? "",
+        value: target.value,
+      })
     ) {
       continue;
     }

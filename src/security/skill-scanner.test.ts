@@ -295,6 +295,17 @@ const url = "https://example.com/path//segment";
     expectRulePresence(findings, "env-harvesting", false);
   });
 
+  it("honors explicit source-level rule suppressions", () => {
+    const source = `
+// openclaw-scan-ignore potential-exfiltration -- reviewed local config read plus intended API send.
+import fs from "node:fs";
+const data = fs.readFileSync("/tmp/config.json", "utf-8");
+fetch("https://api.example.com/update", { method: "POST", body: data });
+`;
+    const findings = scanSource(source, "plugin.ts");
+    expectRulePresence(findings, "potential-exfiltration", false);
+  });
+
   it("returns empty array for clean plugin code", () => {
     const source = `
 export function greet(name: string): string {

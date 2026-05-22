@@ -27,6 +27,16 @@ const CODEX_PROVIDER_ID = "openai-codex";
 const CODEX_OAUTH_WARNING_TITLE = "Codex OAuth";
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const LEGACY_CODEX_APIS = new Set(["openai-responses", "openai-completions"]);
+const DOCTOR_OAUTH_WARN_MS_ENV = "OPENCLAW_DOCTOR_OAUTH_WARN_MS";
+
+function resolveDoctorOAuthWarnMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[DOCTOR_OAUTH_WARN_MS_ENV]?.trim();
+  if (!raw) {
+    return DEFAULT_OAUTH_WARN_MS;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_OAUTH_WARN_MS;
+}
 
 function hasConfiguredCodexOAuthProfile(cfg: OpenClawConfig): boolean {
   return Object.values(cfg.auth?.profiles ?? {}).some(
@@ -243,10 +253,11 @@ export async function noteAuthProfileHealth(params: {
     note(unusable.join("\n"), "Auth profile cooldowns");
   }
 
+  const oauthWarnAfterMs = resolveDoctorOAuthWarnMs();
   let summary = buildAuthHealthSummary({
     store,
     cfg: params.cfg,
-    warnAfterMs: DEFAULT_OAUTH_WARN_MS,
+    warnAfterMs: oauthWarnAfterMs,
   });
 
   const findIssues = () =>
@@ -300,7 +311,7 @@ export async function noteAuthProfileHealth(params: {
         allowKeychainPrompt: false,
       }),
       cfg: params.cfg,
-      warnAfterMs: DEFAULT_OAUTH_WARN_MS,
+      warnAfterMs: oauthWarnAfterMs,
     });
     issues = findIssues();
   }

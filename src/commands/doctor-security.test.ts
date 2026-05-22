@@ -385,6 +385,25 @@ describe("noteSecurityWarnings gateway exposure", () => {
     expect(message).not.toContain("models.providers.openai.headers.X-Proxy-Region");
   });
 
+  it("does not warn when generic MCP env values are stored as plaintext", async () => {
+    await noteSecurityWarnings({
+      mcp: {
+        servers: {
+          "mission-control": {
+            command: "node",
+            env: {
+              MC_URL: "http://127.0.0.1:3000",
+            },
+          },
+        },
+      },
+    } as unknown as OpenClawConfig);
+
+    const message = lastMessage();
+    expect(message).not.toContain("plaintext secret-bearing config fields");
+    expect(message).not.toContain("mcp.servers.mission-control.env.MC_URL");
+  });
+
   it("keeps request headers aligned with secrets audit plaintext checks", async () => {
     await noteSecurityWarnings({
       models: {

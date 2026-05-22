@@ -12,6 +12,7 @@ export type CodexNativeAssetHit = {
 
 const MAX_SCAN_DEPTH = 6;
 const MAX_DISCOVERED_DIRS = 2000;
+const IGNORE_CODEX_NATIVE_ASSETS_ENV = "OPENCLAW_DOCTOR_IGNORE_CODEX_NATIVE_ASSETS";
 
 function hasRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -137,11 +138,19 @@ function shouldScanCodexNativeAssets(cfg: OpenClawConfig, env: NodeJS.ProcessEnv
   return isCodexRuntimeConfigured(cfg, env) || isCodexPluginConfigured(cfg);
 }
 
+function shouldIgnoreCodexNativeAssets(env: NodeJS.ProcessEnv): boolean {
+  const value = env[IGNORE_CODEX_NATIVE_ASSETS_ENV]?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
 export async function scanCodexNativeAssets(params: {
   cfg: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
 }): Promise<CodexNativeAssetHit[]> {
   const env = params.env ?? process.env;
+  if (shouldIgnoreCodexNativeAssets(env)) {
+    return [];
+  }
   if (!shouldScanCodexNativeAssets(params.cfg, env)) {
     return [];
   }

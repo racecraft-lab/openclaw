@@ -22,6 +22,10 @@ export type CoreHealthCheckDeps = {
   readonly detectUnavailableSkills: (cfg: OpenClawConfig) => Promise<readonly SkillStatusEntry[]>;
   readonly collectSecurityWarnings: (cfg: OpenClawConfig) => Promise<readonly string[]>;
   readonly collectWorkspaceSuggestionNotes: (workspaceDir: string) => Promise<readonly string[]>;
+  readonly resolveGatewayAuthTokenForService: (
+    cfg: OpenClawConfig,
+    env: NodeJS.ProcessEnv,
+  ) => Promise<{ token?: string; unavailableReason?: string }>;
 };
 
 async function detectUnavailableSkillsWithRuntime(
@@ -53,10 +57,20 @@ async function collectWorkspaceSuggestionNotesWithRuntime(
   return notes;
 }
 
+async function resolveGatewayAuthTokenForServiceWithRuntime(
+  cfg: OpenClawConfig,
+  env: NodeJS.ProcessEnv,
+): Promise<{ token?: string; unavailableReason?: string }> {
+  const { resolveGatewayAuthTokenForService } =
+    await import("../commands/doctor-gateway-auth-token.js");
+  return resolveGatewayAuthTokenForService(cfg, env);
+}
+
 const defaultCoreHealthCheckDeps: CoreHealthCheckDeps = {
   detectUnavailableSkills: detectUnavailableSkillsWithRuntime,
   collectSecurityWarnings: collectSecurityWarningsWithRuntime,
   collectWorkspaceSuggestionNotes: collectWorkspaceSuggestionNotesWithRuntime,
+  resolveGatewayAuthTokenForService: resolveGatewayAuthTokenForServiceWithRuntime,
 };
 
 export function configValidationIssuesToHealthFindings(
@@ -131,53 +145,61 @@ function resolveDoctorMode(cfg: OpenClawConfig): "local" | "remote" {
   return cfg.gateway?.mode === "remote" ? "remote" : "local";
 }
 
-const gatewayAuthCheck: HealthCheck = {
-  id: "core/doctor/gateway-auth",
-  kind: "core",
-  description: "Local Gateway auth mode has a usable token or another explicit auth mode.",
-  source: "doctor",
-  async detect(ctx) {
-    if (resolveDoctorMode(ctx.cfg) !== "local") {
-      return [];
-    }
-    const gatewayTokenRef = resolveSecretInputRef({
-      value: ctx.cfg.gateway?.auth?.token,
-      defaults: ctx.cfg.secrets?.defaults,
-    }).ref;
-    const auth = resolveGatewayAuth({
-      authConfig: ctx.cfg.gateway?.auth,
-      tailscaleMode: ctx.cfg.gateway?.tailscale?.mode ?? "off",
-    });
-    const needsToken =
-      auth.mode !== "password" &&
-      auth.mode !== "none" &&
-      auth.mode !== "trusted-proxy" &&
-      (auth.mode !== "token" || !auth.token);
-    if (!needsToken) {
-      return [];
-    }
-    if (gatewayTokenRef) {
+function createGatewayAuthCheck(deps: CoreHealthCheckDeps): HealthCheck {
+  return {
+    id: "core/doctor/gateway-auth",
+    kind: "core",
+    description: "Local Gateway auth mode has a usable token or another explicit auth mode.",
+    source: "doctor",
+    async detect(ctx) {
+      if (resolveDoctorMode(ctx.cfg) !== "local") {
+        return [];
+      }
+      const gatewayTokenRef = resolveSecretInputRef({
+        value: ctx.cfg.gateway?.auth?.token,
+        defaults: ctx.cfg.secrets?.defaults,
+      }).ref;
+      const auth = resolveGatewayAuth({
+        authConfig: ctx.cfg.gateway?.auth,
+        tailscaleMode: ctx.cfg.gateway?.tailscale?.mode ?? "off",
+      });
+      const needsToken =
+        auth.mode !== "password" &&
+        auth.mode !== "none" &&
+        auth.mode !== "trusted-proxy" &&
+        (auth.mode !== "token" || !auth.token);
+      if (!needsToken) {
+        return [];
+      }
+      if (gatewayTokenRef) {
+        const resolution = await deps.resolveGatewayAuthTokenForService(ctx.cfg, process.env);
+        if (resolution.token) {
+          return [];
+        }
+        return [
+          {
+            checkId: "core/doctor/gateway-auth",
+            severity: "warning",
+            message: "Gateway token is managed via SecretRef and is currently unavailable.",
+            path: "gateway.auth.token",
+            fixHint: resolution.unavailableReason
+              ? `${resolution.unavailableReason} Resolve or rotate the external secret source, then rerun doctor.`
+              : "Resolve or rotate the external secret source, then rerun doctor.",
+          },
+        ];
+      }
       return [
         {
           checkId: "core/doctor/gateway-auth",
           severity: "warning",
-          message: "Gateway token is managed via SecretRef and is currently unavailable.",
-          path: "gateway.auth.token",
-          fixHint: "Resolve or rotate the external secret source, then rerun doctor.",
+          message: "Gateway auth is off or missing a token.",
+          path: "gateway.auth",
+          fixHint: "Run `openclaw doctor --fix --generate-gateway-token` to generate a token.",
         },
       ];
-    }
-    return [
-      {
-        checkId: "core/doctor/gateway-auth",
-        severity: "warning",
-        message: "Gateway auth is off or missing a token.",
-        path: "gateway.auth",
-        fixHint: "Run `openclaw doctor --fix --generate-gateway-token` to generate a token.",
-      },
-    ];
-  },
-};
+    },
+  };
+}
 
 const hooksModelCheck: HealthCheck = {
   id: "core/doctor/hooks-model",
@@ -739,7 +761,7 @@ function createWorkspaceSuggestionsCheck(deps: CoreHealthCheckDeps): HealthCheck
 function createConvertedWorkflowChecks(deps: CoreHealthCheckDeps): readonly HealthCheck[] {
   return [
     claudeCliCheck,
-    gatewayAuthCheck,
+    createGatewayAuthCheck(deps),
     legacyStateCheck,
     legacyWhatsAppCrontabCheck,
     gatewayPlatformNotesCheck,

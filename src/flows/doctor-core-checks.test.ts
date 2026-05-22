@@ -66,6 +66,12 @@ function createDeps(overrides: Partial<CoreHealthCheckDeps> = {}): CoreHealthChe
     async collectWorkspaceSuggestionNotes(): Promise<readonly string[]> {
       return [];
     },
+    async resolveGatewayAuthTokenForService(): Promise<{
+      token?: string;
+      unavailableReason?: string;
+    }> {
+      return {};
+    },
     ...overrides,
   };
 }
@@ -223,6 +229,47 @@ describe("registerCoreHealthChecks", () => {
         target: "skills.entries.missing-tool.enabled",
       }),
     );
+  });
+
+  it("does not warn when a gateway token SecretRef resolves successfully", async () => {
+    const check = getCheck(
+      createCoreHealthChecks(
+        createDeps({
+          async resolveGatewayAuthTokenForService(): Promise<{
+            token?: string;
+            unavailableReason?: string;
+          }> {
+            return { token: "resolved-token" };
+          },
+        }),
+      ),
+      "core/doctor/gateway-auth",
+    );
+
+    const findings = await check.detect({
+      mode: "lint",
+      runtime,
+      cfg: {
+        gateway: {
+          mode: "local",
+          auth: {
+            mode: "token",
+            token: { source: "exec", provider: "op_gateway_token", id: "value" },
+          },
+        },
+        secrets: {
+          providers: {
+            op_gateway_token: {
+              source: "exec",
+              command: "/usr/bin/printf",
+              args: ["token"],
+            },
+          },
+        },
+      } as OpenClawConfig,
+    });
+
+    expect(findings).toEqual([]);
   });
 
   it("converts security doctor warnings into health findings", async () => {

@@ -17,6 +17,8 @@ export type GatewayServiceLayoutSummary = {
   entrypointSourceCheckout?: boolean;
 };
 
+const ALLOW_SOURCE_CHECKOUT_SERVICE_ENV = "OPENCLAW_ALLOW_SOURCE_CHECKOUT_SERVICE";
+
 function shellQuoteArg(value: string): string {
   if (/^[A-Za-z0-9_./:@%+=,-]+$/u.test(value)) {
     return value;
@@ -114,8 +116,10 @@ export async function summarizeGatewayServiceLayout(
   const packageVersion = packageRoot
     ? ((await readPackageVersion(packageRoot)) ?? undefined)
     : undefined;
+  const allowsSourceCheckoutService =
+    command.environment?.[ALLOW_SOURCE_CHECKOUT_SERVICE_ENV]?.trim() === "1";
   const entrypointSourceCheckout = packageRootReal
-    ? await isSourceCheckoutRoot(packageRootReal)
+    ? (await isSourceCheckoutRoot(packageRootReal)) && !allowsSourceCheckoutService
     : undefined;
 
   return {

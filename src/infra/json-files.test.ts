@@ -88,6 +88,17 @@ describe("json file helpers", () => {
     });
   });
 
+  it("uses private directory permissions by default for atomic json writes", async () => {
+    await withTempDir({ prefix: "openclaw-json-files-" }, async (base) => {
+      const filePath = path.join(base, "nested", "config.json");
+
+      await writeJsonAtomic(filePath, { ok: true });
+
+      const dirMode = (await fs.stat(path.dirname(filePath))).mode & 0o777;
+      expect(dirMode).toBe(0o700);
+    });
+  });
+
   it.each([
     { input: "hello", expected: "hello\n" },
     { input: "hello\n", expected: "hello\n" },
@@ -96,6 +107,17 @@ describe("json file helpers", () => {
       const filePath = path.join(base, "nested", "note.txt");
       await writeTextAtomic(filePath, input, { trailingNewline: true });
       await expect(fs.readFile(filePath, "utf8")).resolves.toBe(expected);
+    });
+  });
+
+  it("uses private directory permissions by default for atomic text writes", async () => {
+    await withTempDir({ prefix: "openclaw-json-files-" }, async (base) => {
+      const filePath = path.join(base, "nested", "note.txt");
+
+      await writeTextAtomic(filePath, "hello");
+
+      const dirMode = (await fs.stat(path.dirname(filePath))).mode & 0o777;
+      expect(dirMode).toBe(0o700);
     });
   });
 
