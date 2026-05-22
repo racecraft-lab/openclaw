@@ -49,7 +49,8 @@ vi.mock("./command-secret-gateway.js", () => ({
 }));
 
 vi.mock("./command-secret-targets.js", () => ({
-  getSecurityAuditCommandSecretTargetIds: () => mocks.getSecurityAuditCommandSecretTargetIds(),
+  getSecurityAuditCommandSecretTargetIds: (config: unknown) =>
+    mocks.getSecurityAuditCommandSecretTargetIds(config),
 }));
 
 function createProgram() {
@@ -153,6 +154,7 @@ describe("security CLI", () => {
     expect(resolverOptions?.commandName).toBe("security audit");
     expect(resolverOptions?.mode).toBe("read_only_status");
     expect(resolverOptions?.targetIds).toBeInstanceOf(Set);
+    expect(getSecurityAuditCommandSecretTargetIds).toHaveBeenCalledWith(sourceConfig);
     const auditOptions = lastSecurityAuditOptions();
     expect(auditOptions?.config).toBe(resolvedConfig);
     expect(auditOptions?.sourceConfig).toBe(sourceConfig);

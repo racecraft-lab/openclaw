@@ -1035,9 +1035,16 @@ describe("command secret target ids", () => {
     expect(ids.has("channels.telegram.botToken")).toBe(true);
   });
 
-  it("includes gateway auth and channel targets for security audit", () => {
-    const ids = getSecurityAuditCommandSecretTargetIds();
+  it("includes gateway auth and only configured channel targets for security audit", () => {
+    const ids = getSecurityAuditCommandSecretTargetIds({
+      channels: {
+        discord: {
+          token: { source: "env", provider: "default", id: "DISCORD_TOKEN" },
+        },
+      },
+    } as never);
     expect(ids.has("channels.discord.token")).toBe(true);
+    expect(ids.has("channels.qqbot.accounts.*.clientSecret")).toBe(false);
     expect(ids.has("gateway.auth.token")).toBe(true);
     expect(ids.has("gateway.auth.password")).toBe(true);
     expect(ids.has("gateway.remote.token")).toBe(true);

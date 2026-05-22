@@ -73,7 +73,7 @@ export function registerSecurityCli(program: Command) {
         await resolveCommandSecretRefsViaGateway({
           config: sourceConfig,
           commandName: "security audit",
-          targetIds: getSecurityAuditCommandSecretTargetIds(),
+          targetIds: getSecurityAuditCommandSecretTargetIds(sourceConfig),
           mode: "read_only_status",
         });
       const report = await runSecurityAudit({

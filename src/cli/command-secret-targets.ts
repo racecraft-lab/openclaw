@@ -964,6 +964,12 @@ export function getStatusCommandSecretTargetIds(
   return toTargetIdSet([...STATIC_STATUS_TARGET_IDS, ...channelTargetIds]);
 }
 
-export function getSecurityAuditCommandSecretTargetIds(): Set<string> {
-  return toTargetIdSet(getCommandSecretTargets().securityAudit);
+export function getSecurityAuditCommandSecretTargetIds(
+  config?: OpenClawConfig,
+  env?: NodeJS.ProcessEnv,
+): Set<string> {
+  const channelTargetIds = config
+    ? getConfiguredChannelSecretTargetIds(config, env)
+    : getChannelSecretTargetIds();
+  return toTargetIdSet([...STATIC_SECURITY_AUDIT_TARGET_IDS, ...channelTargetIds]);
 }
