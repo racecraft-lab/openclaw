@@ -135,7 +135,7 @@ function isBenignMcpLiteralValue(value: unknown): boolean {
   );
 }
 
-export function isLikelySensitiveMcpName(value: string): boolean {
+function isLikelySensitiveMcpName(value: string): boolean {
   const normalized = normalizeLowercaseStringOrEmpty(value);
   if (!normalized) {
     return false;
