@@ -1,3 +1,5 @@
+// Tool media handler tests cover media extraction from tool results, trusted
+// local media flags, and quiet/verbose tool-output emission paths.
 import { describe, expect, it, vi } from "vitest";
 import {
   handleToolExecutionEnd,
@@ -5,7 +7,6 @@ import {
 } from "./embedded-agent-subscribe.handlers.tools.js";
 import type { EmbeddedAgentSubscribeContext } from "./embedded-agent-subscribe.handlers.types.js";
 
-// Minimal mock context factory. Only the fields needed for the media emission path.
 function createMockContext(overrides?: {
   shouldEmitToolOutput?: boolean;
   onToolResult?: ReturnType<typeof vi.fn>;
@@ -13,6 +14,8 @@ function createMockContext(overrides?: {
   builtinToolNames?: ReadonlySet<string>;
   trustedLocalMediaToolNames?: ReadonlySet<string>;
 }): EmbeddedAgentSubscribeContext {
+  // Minimal mock context factory. Only the fields needed for the media emission
+  // path are modeled; everything else is a no-op handler dependency.
   const onToolResult = overrides?.onToolResult ?? vi.fn();
   return {
     params: {
@@ -22,9 +25,11 @@ function createMockContext(overrides?: {
       toolResultFormat: overrides?.toolResultFormat,
     },
     state: {
+      replayState: { replayInvalid: false, hadPotentialSideEffects: false },
       toolMetaById: new Map(),
       toolMetas: [],
       toolSummaryById: new Set(),
+      liveEditDiffStateById: new Map(),
       itemActiveIds: new Set(),
       itemStartedCount: 0,
       itemCompletedCount: 0,
@@ -32,11 +37,14 @@ function createMockContext(overrides?: {
       pendingMessagingTargets: new Map(),
       pendingMessagingMediaUrls: new Map(),
       pendingToolMediaUrls: [],
+      pendingToolMediaTrustByUrl: new Map(),
       pendingToolAudioAsVoice: false,
-      pendingToolTrustedLocalMedia: false,
       messagingToolSentTexts: [],
       messagingToolSentTextsNormalized: [],
+      currentSourceMessagingToolSentTextsNormalized: [],
       messagingToolSentMediaUrls: [],
+      messagingToolSourceReplyPayloads: [],
+      messageToolOnlySourceReplyDelivered: false,
       messagingToolSentTargets: [],
       deterministicApprovalPromptPending: false,
       deterministicApprovalPromptSent: false,
@@ -55,6 +63,7 @@ function createMockContext(overrides?: {
     // Fill in remaining required fields with no-ops.
     blockChunker: null,
     noteLastAssistant: vi.fn(),
+    noteCompletedAssistant: vi.fn(),
     stripBlockTags: vi.fn((t: string) => t),
     emitBlockChunk: vi.fn(),
     flushBlockReplyBuffer: vi.fn(),
@@ -71,6 +80,7 @@ function createMockContext(overrides?: {
     recordAssistantUsage: vi.fn(),
     incrementCompactionCount: vi.fn(),
     getUsageTotals: vi.fn(() => undefined),
+    getLastAssistantUsage: vi.fn(() => undefined),
     getCompactionCount: vi.fn(() => 0),
   } as unknown as EmbeddedAgentSubscribeContext;
 }
@@ -88,6 +98,8 @@ async function emitPngMediaToolResult(
   ctx: EmbeddedAgentSubscribeContext,
   opts?: { isError?: boolean },
 ) {
+  // Browser-style image results carry a text block plus structured path details;
+  // media extraction should queue the path without emitting verbose output.
   await handleToolExecutionEnd(ctx, {
     type: "tool_execution_end",
     toolName: "browser",
@@ -669,7 +681,7 @@ describe("handleToolExecutionEnd media emission", () => {
 
     expect(ctx.state.pendingToolMediaUrls).toEqual(["/tmp/reply.opus"]);
     expect(ctx.state.pendingToolAudioAsVoice).toBe(true);
-    expect(ctx.state.pendingToolTrustedLocalMedia).toBe(true);
+    expect(ctx.state.pendingToolMediaTrustByUrl.get("/tmp/reply.opus")).toBe(true);
   });
 
   it("queues trusted TTS local media when the exact built-in name is absent", async () => {
@@ -698,6 +710,6 @@ describe("handleToolExecutionEnd media emission", () => {
 
     expect(ctx.state.pendingToolMediaUrls).toEqual(["/tmp/reply.opus"]);
     expect(ctx.state.pendingToolAudioAsVoice).toBe(true);
-    expect(ctx.state.pendingToolTrustedLocalMedia).toBe(true);
+    expect(ctx.state.pendingToolMediaTrustByUrl.get("/tmp/reply.opus")).toBe(true);
   });
 });

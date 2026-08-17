@@ -1,3 +1,4 @@
+// Discord plugin module implements route resolution behavior.
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { SessionBindingRecord } from "openclaw/plugin-sdk/conversation-runtime";
 import {
@@ -8,8 +9,8 @@ import {
   resolveAgentRoute,
   type ResolvedAgentRoute,
   type RoutePeer,
+  resolveAgentIdFromSessionKey,
 } from "openclaw/plugin-sdk/routing";
-import { resolveAgentIdFromSessionKey } from "openclaw/plugin-sdk/routing";
 
 export function buildDiscordRoutePeer(params: {
   isDirectMessage: boolean;

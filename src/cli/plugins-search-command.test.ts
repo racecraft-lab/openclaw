@@ -1,3 +1,4 @@
+// Plugins search command tests cover plugin search command registration and results.
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,7 +32,7 @@ vi.mock("../runtime.js", () => ({
     runtime.writeJson(value, space),
 }));
 
-vi.mock("../infra/clawhub.js", () => ({
+vi.mock("../infra/clawhub-packages.js", () => ({
   searchClawHubPackages: mocks.searchClawHubPackages,
 }));
 

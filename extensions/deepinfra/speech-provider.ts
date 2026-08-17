@@ -1,8 +1,9 @@
+// Deepinfra provider module implements model/runtime integration.
 import {
-  asObject,
   createOpenAiCompatibleSpeechProvider,
   type SpeechProviderPlugin,
 } from "openclaw/plugin-sdk/speech";
+import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import {
   DEEPINFRA_BASE_URL,
   DEEPINFRA_TTS_FALLBACK_MODELS,
@@ -21,9 +22,10 @@ type DeepInfraTtsExtraConfig = {
 export function buildDeepInfraSpeechProvider(options?: {
   ttsModels?: readonly DeepInfraSurfaceModel[];
 }): SpeechProviderPlugin {
-  const ids = options?.ttsModels && options.ttsModels.length > 0
-    ? options.ttsModels.map((model) => model.id)
-    : [...DEEPINFRA_TTS_FALLBACK_MODELS];
+  const ids =
+    options?.ttsModels && options.ttsModels.length > 0
+      ? options.ttsModels.map((model) => model.id)
+      : [...DEEPINFRA_TTS_FALLBACK_MODELS];
   const defaultModel = ids[0] ?? DEEPINFRA_TTS_FALLBACK_MODELS[0];
   return createOpenAiCompatibleSpeechProvider<DeepInfraTtsExtraConfig>({
     id: "deepinfra",
@@ -42,7 +44,7 @@ export function buildDeepInfraSpeechProvider(options?: {
     normalizeModel: normalizeDeepInfraModelRef,
     apiErrorLabel: "DeepInfra TTS API error",
     missingApiKeyError: "DeepInfra API key missing",
-    readExtraConfig: (raw) => ({ extraBody: asObject(raw?.extraBody) }),
+    readExtraConfig: (raw) => ({ extraBody: asOptionalRecord(raw?.extraBody) }),
     extraJsonBodyFields: [{ configKey: "extraBody", requestKey: "extra_body" }],
   });
 }

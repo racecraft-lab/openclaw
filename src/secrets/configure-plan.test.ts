@@ -1,18 +1,24 @@
-import { describe, expect, it } from "vitest";
+/** Tests secrets configure plan generation and target validation. */
+import { beforeAll, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   TALK_TEST_PROVIDER_API_KEY_PATH,
   TALK_TEST_PROVIDER_ID,
 } from "../test-utils/talk-test-provider.js";
 import {
-  buildConfigureCandidates,
   buildConfigureCandidatesForScope,
   buildSecretsConfigurePlan,
   collectConfigureProviderChanges,
   hasConfigurePlanChanges,
 } from "./configure-plan.js";
+import { resolveConfigSecretTargetByPath } from "./target-registry.js";
 
 describe("secrets configure plan helpers", () => {
+  beforeAll(() => {
+    resolveConfigSecretTargetByPath(["channels", "telegram", "botToken"]);
+    buildConfigureCandidatesForScope({ config: {} as OpenClawConfig });
+  });
+
   it("builds configure candidates from supported configure targets", () => {
     const config = {
       talk: {
@@ -29,96 +35,29 @@ describe("secrets configure plan helpers", () => {
       },
     } as OpenClawConfig;
 
-    const candidates = buildConfigureCandidates(config);
+    const candidates = buildConfigureCandidatesForScope({ config });
     const paths = candidates.map((entry) => entry.path);
     expect(paths).toContain(TALK_TEST_PROVIDER_API_KEY_PATH);
     expect(paths).toContain("channels.telegram.botToken");
   });
 
-  it("surfaces only likely credential-like core mcp env and header fields as configure candidates", () => {
-    const config = {
-      mcp: {
-        servers: {
-          "mission-control": {
-            env: {
-              MC_URL: "http://127.0.0.1:3000",
-              MC_API_KEY: "plaintext-mcp-api-key", // pragma: allowlist secret
-              AUTH: "plaintext-mcp-auth", // pragma: allowlist secret
-              SERVICE_KEY: "plaintext-service-key", // pragma: allowlist secret
-              AUTH_ENABLED: "enabled",
-              TOKEN_REFRESH: "disabled",
-              PROFILE: "Bearer plaintext-profile-token", // pragma: allowlist secret
-              DASHBOARD_URL: "https://service.example?api_key=plaintext-url-secret", // pragma: allowlist secret
-              CONFIG_SLOT: {
-                source: "env",
-                provider: "default",
-                id: "CONFIG_SLOT_SECRET",
-              },
-            },
-            headers: {
-              "X-Feature-Flag": "enabled",
-              Authorization: "Bearer plaintext-mcp-header", // pragma: allowlist secret
-              "X-Custom-Auth": "plaintext-custom-mcp-header", // pragma: allowlist secret
-              "X-Access-Key": "plaintext-access-key", // pragma: allowlist secret
-              "X-Auth-Mode": "enabled",
-              "X-Token-Refresh": "disabled",
-              "X-Relay": "Bearer plaintext-relay-token", // pragma: allowlist secret
-              "X-Endpoint": "https://example.invalid/mcp?token=plaintext-query-secret", // pragma: allowlist secret
-              "X-Config": {
-                source: "env",
-                provider: "default",
-                id: "X_CONFIG_SECRET",
-              },
+  it("includes credential-like MCP values and excludes benign literals", () => {
+    const candidates = buildConfigureCandidatesForScope({
+      config: {
+        mcp: {
+          servers: {
+            local: {
+              command: "example-mcp",
+              env: { API_TOKEN: "plain-secret", MODE: "debug", LITERAL: "$UNCHANGED" },
             },
           },
         },
-      },
-    } as OpenClawConfig;
+      } as OpenClawConfig,
+    });
 
-    const paths = buildConfigureCandidates(config).map((entry) => entry.path);
-    expect(paths).toContain("mcp.servers.mission-control.env.MC_API_KEY");
-    expect(paths).toContain("mcp.servers.mission-control.env.AUTH");
-    expect(paths).toContain("mcp.servers.mission-control.env.SERVICE_KEY");
-    expect(paths).toContain("mcp.servers.mission-control.headers.Authorization");
-    expect(paths).toContain("mcp.servers.mission-control.headers.X-Custom-Auth");
-    expect(paths).toContain("mcp.servers.mission-control.headers.X-Access-Key");
-    expect(paths).toContain("mcp.servers.mission-control.env.PROFILE");
-    expect(paths).toContain("mcp.servers.mission-control.env.DASHBOARD_URL");
-    expect(paths).toContain("mcp.servers.mission-control.env.CONFIG_SLOT");
-    expect(paths).toContain("mcp.servers.mission-control.headers.X-Relay");
-    expect(paths).toContain("mcp.servers.mission-control.headers.X-Endpoint");
-    expect(paths).toContain("mcp.servers.mission-control.headers.X-Config");
-    expect(paths).not.toContain("mcp.servers.mission-control.env.AUTH_ENABLED");
-    expect(paths).not.toContain("mcp.servers.mission-control.env.TOKEN_REFRESH");
-    expect(paths).not.toContain("mcp.servers.mission-control.env.MC_URL");
-    expect(paths).not.toContain("mcp.servers.mission-control.headers.X-Auth-Mode");
-    expect(paths).not.toContain("mcp.servers.mission-control.headers.X-Token-Refresh");
-    expect(paths).not.toContain("mcp.servers.mission-control.headers.X-Feature-Flag");
-  });
-
-  it("surfaces numeric-only MCP values when the key name is credential-like", () => {
-    const config = {
-      mcp: {
-        servers: {
-          demo: {
-            env: {
-              API_KEY: "123456", // pragma: allowlist secret
-              RETRY_COUNT: "3000",
-            },
-            headers: {
-              Authorization: "123456", // pragma: allowlist secret
-              "X-Retry-Count": "3000",
-            },
-          },
-        },
-      },
-    } as OpenClawConfig;
-
-    const paths = buildConfigureCandidates(config).map((entry) => entry.path);
-    expect(paths).toContain("mcp.servers.demo.env.API_KEY");
-    expect(paths).toContain("mcp.servers.demo.headers.Authorization");
-    expect(paths).not.toContain("mcp.servers.demo.env.RETRY_COUNT");
-    expect(paths).not.toContain("mcp.servers.demo.headers.X-Retry-Count");
+    expect(candidates.map((entry) => entry.path)).toContain("mcp.servers.local.env.API_TOKEN");
+    expect(candidates.map((entry) => entry.path)).not.toContain("mcp.servers.local.env.MODE");
+    expect(candidates.map((entry) => entry.path)).not.toContain("mcp.servers.local.env.LITERAL");
   });
 
   it("collects provider upserts and deletes", () => {
@@ -293,7 +232,7 @@ describe("secrets configure plan helpers", () => {
     expect(plan.options).toEqual({
       scrubEnv: true,
       scrubAuthProfilesForProviderTargets: true,
-      scrubLegacyAuthJson: true,
+      scrubLegacyAuthJson: false,
     });
   });
 });

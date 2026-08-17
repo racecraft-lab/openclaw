@@ -1,8 +1,9 @@
+// Smoke Common helper supports OpenClaw script workflows.
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { extractLastOpenClawVersionFromLog } from "./filesystem.ts";
 import { run, say } from "./host-command.ts";
-import { resolveHostIp, resolveHostPort } from "./host-server.ts";
-import { startHostServer } from "./host-server.ts";
+import { resolveHostIp, resolveHostPort, startHostServer } from "./host-server.ts";
 import { runSmokeLane, type SmokeLane, type SmokeLaneStatus } from "./lane-runner.ts";
 import {
   packageBuildCommitFromTgz,
@@ -22,12 +23,13 @@ export interface SmokeRunOptions {
   json: boolean;
   keepServer: boolean;
   mode: Mode;
+  npmRegistry?: string;
   provider: Provider;
   snapshotHint: string;
   targetPackageSpec?: string;
 }
 
-export interface SmokeLaneStatuses {
+interface SmokeLaneStatuses {
   freshAgent: string;
   freshGateway: string;
   freshMain: string;
@@ -39,7 +41,7 @@ export interface SmokeLaneStatuses {
   upgradeVersion: string;
 }
 
-export interface CommonSmokeSummary {
+interface CommonSmokeSummary {
   currentHead: string;
   freshMain: {
     agent: string;
@@ -68,11 +70,14 @@ export interface CommonSmokeSummary {
 export abstract class SmokeRunController<TOptions extends SmokeRunOptions & SmokeHostOptions> {
   protected hostIp = "";
   protected hostPort = 0;
+  protected options: TOptions;
   protected runDir = "";
   protected server: HostServer | null = null;
   protected tgzDir = "";
 
-  protected constructor(protected options: TOptions) {}
+  protected constructor(options: TOptions) {
+    this.options = options;
+  }
 
   protected abstract runFreshLane(): Promise<void>;
   protected abstract runUpgradeLane(): Promise<void>;
@@ -118,7 +123,7 @@ export abstract class SmokeRunController<TOptions extends SmokeRunOptions & Smok
   }
 }
 
-export async function resolveSmokeHostConfig(
+async function resolveSmokeHostConfig(
   options: SmokeHostOptions,
   defaultPort: number,
 ): Promise<{ hostIp: string; hostPort: number }> {
@@ -128,7 +133,7 @@ export async function resolveSmokeHostConfig(
   };
 }
 
-export async function prepareSmokeRunHost(
+async function prepareSmokeRunHost(
   options: SmokeHostOptions,
   defaultPort: number,
   latestVersion: string,
@@ -148,7 +153,7 @@ export async function prepareSmokeRunHost(
   return [host.hostIp, host.hostPort];
 }
 
-export function logSmokeRunStart(input: {
+function logSmokeRunStart(input: {
   latestVersion: string;
   runDir: string;
   snapshot: SnapshotInfo;
@@ -163,7 +168,7 @@ export function logSmokeRunStart(input: {
   say(`Run logs: ${input.runDir}`);
 }
 
-export async function startSmokeArtifactServer(input: {
+async function startSmokeArtifactServer(input: {
   artifact: PackageArtifact;
   dir: string;
   hostIp: string;
@@ -203,7 +208,7 @@ export async function packAndServeSmokeArtifact(
   return [artifact, server.server, server.hostPort];
 }
 
-export async function runRequestedSmokeLanes(input: {
+async function runRequestedSmokeLanes(input: {
   mode: Mode;
   runFresh: () => Promise<void>;
   runLane: (name: "fresh" | "upgrade", fn: () => Promise<void>) => Promise<void>;
@@ -217,7 +222,7 @@ export async function runRequestedSmokeLanes(input: {
   }
 }
 
-export async function runSmokeLaneWithStatus(
+async function runSmokeLaneWithStatus(
   name: "fresh" | "upgrade",
   fn: () => Promise<void>,
   statuses: Pick<SmokeLaneStatuses, "freshMain" | "upgrade">,
@@ -225,7 +230,7 @@ export async function runSmokeLaneWithStatus(
   await runSmokeLane(name, fn, (lane, status) => setSmokeLaneStatus(statuses, lane, status));
 }
 
-export function setSmokeLaneStatus(
+function setSmokeLaneStatus(
   statuses: Pick<SmokeLaneStatuses, "freshMain" | "upgrade">,
   name: SmokeLane,
   status: SmokeLaneStatus,
@@ -237,7 +242,7 @@ export function setSmokeLaneStatus(
   }
 }
 
-export async function finishSmokeRun(input: {
+async function finishSmokeRun(input: {
   json: boolean;
   printSummary: (summaryPath: string) => void;
   status: Pick<SmokeLaneStatuses, "freshMain" | "upgrade">;
@@ -253,7 +258,7 @@ export async function finishSmokeRun(input: {
   }
 }
 
-export async function runSmokeLanesAndFinish(
+async function runSmokeLanesAndFinish(
   mode: Mode,
   json: boolean,
   status: Pick<SmokeLaneStatuses, "freshMain" | "upgrade">,
@@ -276,7 +281,7 @@ export async function runSmokeLanesAndFinish(
   });
 }
 
-export async function cleanupSmokeArtifacts(input: {
+async function cleanupSmokeArtifacts(input: {
   keepServer: boolean;
   server: HostServer | null;
   tgzDir: string;
@@ -301,8 +306,7 @@ export async function extractLastOpenClawVersion(
   phaseName: string,
   pattern: RegExp,
 ): Promise<string> {
-  const text = await readFile(path.join(runDir, `${phaseName}.log`), "utf8").catch(() => "");
-  return [...text.matchAll(pattern)].at(-1)?.[1] ?? "";
+  return await extractLastOpenClawVersionFromLog(path.join(runDir, `${phaseName}.log`), pattern);
 }
 
 export function buildCommonSmokeSummary(input: {

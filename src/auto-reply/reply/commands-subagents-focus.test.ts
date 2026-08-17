@@ -1,3 +1,4 @@
+// Tests subagent focus commands, active target state, and reply copy.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -104,7 +105,7 @@ vi.mock("../../infra/outbound/session-binding-service.js", () => ({
   getSessionBindingService: () => buildFocusSessionBindingService(),
 }));
 
-vi.mock("../../agents/subagent-capabilities.js", () => ({
+vi.mock("../../agents/subagents/spawn/subagent-capabilities.js", () => ({
   resolveStoredSubagentCapabilities: (sessionKey: string, options: unknown) =>
     hoisted.resolveStoredSubagentCapabilitiesMock(sessionKey, options),
 }));

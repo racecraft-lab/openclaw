@@ -1,3 +1,4 @@
+// Input provenance tests cover source metadata attached to session inputs.
 import { describe, expect, it } from "vitest";
 import {
   annotateInterSessionPromptText,
@@ -99,6 +100,7 @@ describe("isAgentMediatedCompletionSourceTool", () => {
 describe("shouldPreserveUserFacingSessionStateForInputProvenance", () => {
   it.each([
     "agent_harness_task",
+    "exec_approval_followup",
     "image_generate",
     "music_generate",
     "subagent_announce",

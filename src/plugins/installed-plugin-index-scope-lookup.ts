@@ -1,3 +1,4 @@
+// Looks up installed plugin index records by normalized scope.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { compileSafeRegex } from "../security/safe-regex.js";
 import { normalizePluginId } from "./config-state.js";
@@ -7,7 +8,6 @@ import type { InstalledPluginIndex, InstalledPluginIndexRecord } from "./install
 const PROVIDER_CONTRIBUTION_CONTRACTS = [
   "externalAuthProviders",
   "embeddingProviders",
-  "memoryEmbeddingProviders",
   "speechProviders",
   "realtimeTranscriptionProviders",
   "realtimeVoiceProviders",
@@ -18,6 +18,8 @@ const PROVIDER_CONTRIBUTION_CONTRACTS = [
   "musicGenerationProviders",
   "webFetchProviders",
   "webSearchProviders",
+  "workerProviders",
+  "usageProviders",
 ] as const;
 
 type OwnerMap = ReadonlyMap<string, readonly string[]>;

@@ -1,3 +1,4 @@
+// Covers plugin config state normalization and reset behavior.
 import { describe, expect, it, vi } from "vitest";
 import {
   createPluginActivationSource,
@@ -153,6 +154,8 @@ describe("normalizePluginsConfig", () => {
         llm: {
           allowModelOverride: true,
           allowedModels: [" openai/gpt-5.4 ", "", "anthropic/claude-sonnet-4-6"],
+          allowedCompletionModels: [" openai/gpt-5.4 ", "", "google/gemini-3-flash"],
+          allowAuthProfileOverride: true,
           allowAgentIdOverride: false,
         },
       })?.llm,
@@ -160,6 +163,9 @@ describe("normalizePluginsConfig", () => {
       allowModelOverride: true,
       hasAllowedModelsConfig: true,
       allowedModels: ["openai/gpt-5.4", "anthropic/claude-sonnet-4-6"],
+      hasAllowedCompletionModelsConfig: true,
+      allowedCompletionModels: ["openai/gpt-5.4", "google/gemini-3-flash"],
+      allowAuthProfileOverride: true,
       allowAgentIdOverride: false,
     });
   });
@@ -206,6 +212,20 @@ describe("normalizePluginsConfig", () => {
     expect(result.deny).toEqual(["unknown-plugin-three"]);
     expect(result.entries["unknown-plugin-four"]?.enabled).toBe(true);
     expect(discoverPlugins).not.toHaveBeenCalled();
+  });
+
+  it("normalizes unknown plugin ids to lowercase canonical keys", () => {
+    const result = normalizePluginsConfig({
+      allow: [" Demo-Plugin "],
+      deny: [" OTHER-PLUGIN "],
+      entries: {
+        " CODEX ": { enabled: true },
+      },
+    });
+
+    expect(result.allow).toEqual(["demo-plugin"]);
+    expect(result.deny).toEqual(["other-plugin"]);
+    expect(result.entries.codex?.enabled).toBe(true);
   });
 
   it("does not consult discovery or manifests for alias lookup", async () => {

@@ -1,3 +1,5 @@
+// Tool invoke cron regression tests cover HTTP tool invocation for cron/gateway
+// tools with lightweight mocks around auth, config, and before-tool hooks.
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,9 +60,9 @@ vi.mock("../plugins/tools.js", () => ({
 vi.mock("../agents/openclaw-tools.js", () => {
   const tools = [
     {
-      name: "cron",
+      name: "automations",
       parameters: { type: "object", properties: { action: { type: "string" } } },
-      execute: async () => ({ ok: true, via: "cron" }),
+      execute: async () => ({ ok: true, via: "automations" }),
     },
     {
       name: "gateway",

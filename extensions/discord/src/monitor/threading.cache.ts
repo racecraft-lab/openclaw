@@ -1,3 +1,4 @@
+// Discord plugin module implements threading.cache behavior.
 import type { DiscordThreadStarter } from "./threading.types.js";
 
 type DiscordThreadStarterCacheEntry = {
@@ -9,10 +10,6 @@ const DISCORD_THREAD_STARTER_CACHE_TTL_MS = 5 * 60 * 1000;
 const DISCORD_THREAD_STARTER_CACHE_MAX = 500;
 
 const DISCORD_THREAD_STARTER_CACHE = new Map<string, DiscordThreadStarterCacheEntry>();
-
-export function resetDiscordThreadStarterCacheForTest() {
-  DISCORD_THREAD_STARTER_CACHE.clear();
-}
 
 export function getCachedThreadStarter(key: string, now: number): DiscordThreadStarter | undefined {
   const entry = DISCORD_THREAD_STARTER_CACHE.get(key);

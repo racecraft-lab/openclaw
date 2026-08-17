@@ -1,9 +1,11 @@
+// Program nodes basic e2e tests cover node command registration through the full CLI program.
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createIosNodeListResponse } from "./program.nodes-test-helpers.js";
-import { callGateway, installBaseProgramMocks, runtime } from "./program.test-mocks.js";
-
-installBaseProgramMocks();
+import {
+  createIosNodeListResponse,
+  formatRuntimeLogCallArg,
+} from "./program.nodes-test-helpers.js";
+import { programGatewayCallMock, runtime } from "./program.test-mocks.js";
 
 let registerNodesCli: typeof import("./nodes-cli.js").registerNodesCli;
 
@@ -13,24 +15,10 @@ type GatewayCallRequest = {
   mode?: string;
   params?: unknown;
   scopes?: unknown;
+  useStoredDeviceAuth?: boolean;
+  requiredStoredDeviceAuthScopes?: unknown;
+  requireLocalBackendSharedAuth?: boolean;
 };
-
-function formatRuntimeLogCallArg(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-  if (value == null) {
-    return "";
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-}
 
 describe("cli program (nodes basics)", () => {
   let program: Command;
@@ -52,7 +40,7 @@ describe("cli program (nodes basics)", () => {
   }
 
   function gatewayRequests(): GatewayCallRequest[] {
-    return callGateway.mock.calls.map(([request]) => request as GatewayCallRequest);
+    return programGatewayCallMock.mock.calls.map(([request]) => request as GatewayCallRequest);
   }
 
   function writeJsonArgAt(index: number): unknown {
@@ -73,7 +61,7 @@ describe("cli program (nodes basics)", () => {
   }
 
   function mockGatewayWithIosNodeListAnd(method: "node.describe" | "node.invoke", result: unknown) {
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.list") {
         return createIosNodeListResponse();
@@ -93,7 +81,7 @@ describe("cli program (nodes basics)", () => {
 
   it("runs nodes list with the effective paired node view while preserving paired metadata", async () => {
     const now = Date.now();
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -202,7 +190,7 @@ describe("cli program (nodes basics)", () => {
   });
 
   it("runs unfiltered nodes list with pairing data when node.list is unavailable", async () => {
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -227,11 +215,17 @@ describe("cli program (nodes basics)", () => {
     const output = getRuntimeOutput();
     expect(output).toContain("Pending: 0 · Paired: 1");
     expect(output).toContain("Pairing Scoped");
+    // The degraded table must never look authoritative: the fallback is
+    // announced on stderr so --json stdout stays parseable.
+    expect(runtime.error).toHaveBeenCalledWith(
+      expect.stringContaining("live node view unavailable"),
+    );
+    expect(output).not.toContain("live node view unavailable");
   });
 
   it("sanitizes untrusted nodes list table fields while preserving JSON values", async () => {
     const now = Date.now();
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -284,7 +278,7 @@ describe("cli program (nodes basics)", () => {
 
   it("runs nodes list --connected and filters to connected nodes", async () => {
     const now = Date.now();
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -323,25 +317,56 @@ describe("cli program (nodes basics)", () => {
     expect(output).not.toContain("Two");
   });
 
-  it("runs nodes status --last-connected and filters by age", async () => {
-    const now = Date.now();
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+  it("counts catalog-only paired nodes in the filtered list total", async () => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
+      if (opts.method === "node.pair.list") {
+        return {
+          pending: [],
+          paired: [{ nodeId: "paired-store", displayName: "Paired Store" }],
+        };
+      }
+      if (opts.method === "node.list") {
+        return {
+          nodes: [
+            { nodeId: "paired-store", connected: true },
+            {
+              nodeId: "catalog-only",
+              displayName: "Catalog Only",
+              paired: true,
+              connected: true,
+            },
+          ],
+        };
+      }
+      return { ok: true };
+    });
+
+    await runProgram(["nodes", "list", "--connected"]);
+
+    const output = getRuntimeOutput();
+    expect(output).toMatch(/^Pending: 0 · Paired: 2$/m);
+    expect(output).toContain("Paired Store");
+    expect(output).toContain("Catalog Only");
+  });
+
+  it("runs nodes status --last-connected using the recorded node.list fact", async () => {
+    const now = Date.now();
+    const methods: string[] = [];
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
+      const opts = (args[0] ?? {}) as { method?: string };
+      methods.push(opts.method ?? "");
       if (opts.method === "node.list") {
         return {
           ts: now,
           nodes: [
-            { nodeId: "n1", displayName: "One", connected: false },
-            { nodeId: "n2", displayName: "Two", connected: false },
-          ],
-        };
-      }
-      if (opts.method === "node.pair.list") {
-        return {
-          pending: [],
-          paired: [
-            { nodeId: "n1", lastConnectedAtMs: now - 1_000 },
-            { nodeId: "n2", lastConnectedAtMs: now - 2 * 24 * 60 * 60 * 1000 },
+            { nodeId: "n1", displayName: "One", connected: false, lastConnectedAtMs: now - 1_000 },
+            {
+              nodeId: "n2",
+              displayName: "Two",
+              connected: false,
+              lastConnectedAtMs: now - 2 * 24 * 60 * 60 * 1000,
+            },
           ],
         };
       }
@@ -349,7 +374,9 @@ describe("cli program (nodes basics)", () => {
     });
     await runProgram(["nodes", "status", "--last-connected", "24h"]);
 
-    expectGatewayRequest("node.pair.list", {});
+    // The gateway records lastConnectedAtMs on node.list rows; re-joining
+    // node.pair.list broke --last-connected for read-scoped callers.
+    expect(methods).not.toContain("node.pair.list");
     const output = getRuntimeOutput();
     expect(output).toContain("One");
     expect(output).not.toContain("Two");
@@ -399,7 +426,8 @@ describe("cli program (nodes basics)", () => {
         "S10 Ultra",
         "Detail",
         "device: Android",
-        "hw: samsung",
+        "hw:",
+        "samsung",
         "SM-X926B",
         "Status",
         "unpaired",
@@ -409,8 +437,50 @@ describe("cli program (nodes basics)", () => {
         "canvas",
       ],
     },
+    {
+      label: "pending first node approval",
+      node: {
+        nodeId: "pending-node",
+        displayName: "Pending Node",
+        caps: [],
+        commands: [],
+        approvalState: "pending-approval",
+        pendingRequestId: "request-approval",
+        pendingDeclaredCaps: ["system"],
+        pendingDeclaredCommands: ["system.run"],
+        paired: true,
+        connected: true,
+      },
+      expectedOutput: [
+        "Pending Node",
+        "approval pending",
+        "Approval pending for Pending Node",
+        "openclaw nodes approve request-approval",
+      ],
+    },
+    {
+      label: "pending node reapproval",
+      node: {
+        nodeId: "pending-reapproval-node",
+        displayName: "Pending Reapproval Node",
+        caps: ["camera"],
+        commands: ["camera.snap"],
+        approvalState: "pending-reapproval",
+        pendingRequestId: "request-reapproval",
+        pendingDeclaredCaps: ["camera", "system"],
+        pendingDeclaredCommands: ["camera.snap", "system.run"],
+        paired: true,
+        connected: true,
+      },
+      expectedOutput: [
+        "Pending Reapproval Node",
+        "reapproval pending",
+        "Reapproval pending for Pending Reapproval Node",
+        "openclaw nodes approve request-reapproval",
+      ],
+    },
   ])("runs nodes status and renders $label", async ({ node, expectedOutput }) => {
-    callGateway.mockResolvedValue({
+    programGatewayCallMock.mockResolvedValue({
       ts: Date.now(),
       nodes: [node],
     });
@@ -422,6 +492,71 @@ describe("cli program (nodes basics)", () => {
     for (const expected of expectedOutput) {
       expect(output).toContain(expected);
     }
+    expect(
+      gatewayRequests().find((request) => request.method === "node.list")?.useStoredDeviceAuth,
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      platform: "win32",
+      pathEnv: "C:\\one;D:\\two;E:\\three;F:\\four",
+      expectedPath: "path: C:\\one;D:\\two;…;F:\\four",
+      rejectedPath: "path: C:\\one;D:…:\\four",
+    },
+    {
+      platform: "windows",
+      pathEnv: "C:\\one;D:\\two;E:\\three;F:\\four",
+      expectedPath: "path: C:\\one;D:\\two;…;F:\\four",
+      rejectedPath: "path: C:\\one;D:…:\\four",
+    },
+    {
+      platform: "linux",
+      pathEnv: "/one:/two:/three:/four",
+      expectedPath: "path: /one:/two:…:/four",
+      rejectedPath: "path: /one:/two:/three:/four",
+    },
+  ])("renders $platform node PATH entries with their platform delimiter", async (fixture) => {
+    programGatewayCallMock.mockResolvedValue({
+      ts: Date.now(),
+      nodes: [
+        {
+          nodeId: `${fixture.platform}-node`,
+          displayName: `${fixture.platform} node`,
+          platform: fixture.platform,
+          pathEnv: fixture.pathEnv,
+          paired: true,
+          connected: true,
+        },
+      ],
+    });
+
+    await runProgram(["nodes", "status"]);
+
+    const output = getRuntimeOutput();
+    expect(output).toContain(fixture.expectedPath);
+    expect(output).not.toContain(fixture.rejectedPath);
+  });
+
+  it("keeps connection age adjacent to connection status before pending approval", async () => {
+    programGatewayCallMock.mockResolvedValue({
+      ts: Date.now(),
+      nodes: [
+        {
+          nodeId: "pending-reapproval-node",
+          displayName: "Pending Reapproval Node",
+          approvalState: "pending-reapproval",
+          pendingRequestId: "request-reapproval",
+          paired: true,
+          connected: true,
+          connectedAtMs: Date.now() - 60_000,
+        },
+      ],
+    });
+
+    await runProgram(["nodes", "status"]);
+
+    expect(getRuntimeOutput()).toMatch(/connected \([^)]* ago\) · reapproval pending/);
   });
 
   it("runs nodes describe and calls node.describe", async () => {
@@ -429,8 +564,13 @@ describe("cli program (nodes basics)", () => {
       ts: Date.now(),
       nodeId: "ios-node",
       displayName: "iOS Node",
-      caps: ["canvas", "camera"],
-      commands: ["canvas.eval", "canvas.snapshot", "camera.snap"],
+      caps: ["camera"],
+      commands: ["camera.snap"],
+      approvalState: "pending-reapproval",
+      pendingRequestId: "request-approval",
+      pendingDeclaredCaps: ["camera", "canvas"],
+      pendingDeclaredCommands: ["camera.snap", "canvas.eval\u001b[2K", "canvas.snapshot"],
+      pendingDeclaredPermissions: { camera: true },
       connected: true,
     });
 
@@ -443,14 +583,159 @@ describe("cli program (nodes basics)", () => {
     );
     expect(describeRequest?.clientName).toBe("cli");
     expect(describeRequest?.mode).toBe("cli");
+    expect(describeRequest?.useStoredDeviceAuth).toBe(true);
 
     const out = getRuntimeOutput();
     expect(out).toContain("Commands");
+    expect(out).toContain("camera.snap");
+    expect(out).toContain("Approval");
+    expect(out).toContain("reapproval pending");
+    expect(out).toContain("Pending request");
+    expect(out).toContain("request-approval");
+    expect(out).toContain("Pending caps");
+    expect(out).toContain("canvas");
+    expect(out).toContain("Pending commands");
     expect(out).toContain("canvas.eval");
+    expect(out).toContain("openclaw nodes approve request-approval");
+    expect(out).not.toContain("\u001b");
+    expect(out).not.toContain("[2K");
+  });
+
+  it("keeps explicit gateway options in node reapproval guidance without leaking auth", async () => {
+    programGatewayCallMock.mockResolvedValue({
+      ts: Date.now(),
+      nodes: [
+        {
+          nodeId: "pending-node",
+          displayName: "Pending Node",
+          approvalState: "pending-reapproval",
+          pendingRequestId: "request-reapproval",
+          paired: true,
+          connected: true,
+        },
+      ],
+    });
+
+    await runProgram([
+      "nodes",
+      "status",
+      "--url",
+      "ws://gateway-user:url-secret@gateway.example:18789/openclaw?cluster=qa",
+      "--timeout",
+      "3000",
+      "--token",
+      "secret-token",
+    ]);
+
+    const output = getRuntimeOutput();
+    expect(output).toContain("openclaw nodes approve request-reapproval --timeout 3000");
+    expect(output).toContain("Reuse the same connection options when rerunning: --url, --token.");
+    expect(output).not.toContain("gateway-user");
+    expect(output).not.toContain("url-secret");
+    expect(output).not.toContain("gateway.example");
+    expect(output).not.toContain("secret-token");
+  });
+
+  it("describes pending-only nodes through the pairing diagnostics view", async () => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
+      const opts = (args[0] ?? {}) as {
+        method?: string;
+        params?: { nodeId?: string };
+        useStoredDeviceAuth?: boolean;
+      };
+      if (opts.method === "node.list") {
+        return opts.useStoredDeviceAuth
+          ? {
+              nodes: [
+                {
+                  nodeId: "pending-only-node",
+                  displayName: "Pending Only Node",
+                  approvalState: "pending-approval",
+                  pendingRequestId: "pending-only-request",
+                  paired: false,
+                  connected: false,
+                },
+              ],
+            }
+          : { nodes: [] };
+      }
+      if (opts.method === "node.describe" && opts.params?.nodeId === "pending-only-node") {
+        return {
+          nodeId: "pending-only-node",
+          displayName: "Pending Only Node",
+          approvalState: "pending-approval",
+          pendingRequestId: "pending-only-request",
+          paired: false,
+          connected: false,
+        };
+      }
+      return { ok: true };
+    });
+
+    await runProgram(["nodes", "describe", "--node", "pending-only-node"]);
+
+    const describeRequest = gatewayRequests().find((request) => request.method === "node.describe");
+    expect(describeRequest?.params).toEqual({ nodeId: "pending-only-node" });
+    expect(describeRequest?.useStoredDeviceAuth).toBe(true);
+    expect(getRuntimeOutput()).toContain("pending-only-request");
+  });
+
+  it("describes nodes through the paired-node fallback on older gateways", async () => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
+      const opts = (args[0] ?? {}) as {
+        method?: string;
+        params?: { nodeId?: string };
+      };
+      if (opts.method === "node.list") {
+        throw Object.assign(new Error("unknown method: node.list"), {
+          name: "GatewayClientRequestError",
+          gatewayCode: "INVALID_REQUEST",
+        });
+      }
+      if (opts.method === "node.pair.list") {
+        return {
+          pending: [],
+          paired: [{ nodeId: "legacy-node", displayName: "Legacy Node" }],
+        };
+      }
+      if (opts.method === "node.describe" && opts.params?.nodeId === "legacy-node") {
+        return {
+          nodeId: "legacy-node",
+          displayName: "Legacy Node",
+          paired: true,
+          connected: false,
+        };
+      }
+      return { ok: true };
+    });
+
+    await runProgram(["nodes", "describe", "--node", "legacy-node"]);
+
+    expectGatewayRequest("node.pair.list", {});
+    expectGatewayRequest("node.describe", { nodeId: "legacy-node" });
+    expect(getRuntimeOutput()).toContain("Legacy Node");
+  });
+
+  it("does not recommend approval from a stale pending request id alone", async () => {
+    mockGatewayWithIosNodeListAnd("node.describe", {
+      nodeId: "ios-node",
+      displayName: "iOS Node",
+      approvalState: "approved",
+      pendingRequestId: "stale-request",
+      connected: true,
+    });
+
+    await runProgram(["nodes", "describe", "--node", "ios-node", "--token", "secret-token"]);
+
+    const output = getRuntimeOutput();
+    expect(output).toContain("stale-request");
+    expect(output).not.toContain("openclaw nodes approve stale-request");
+    expect(output).not.toContain("Reuse the same --token option when rerunning.");
+    expect(output).not.toContain("secret-token");
   });
 
   it("runs nodes approve with the pending request approval scopes", async () => {
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -491,7 +776,7 @@ describe("cli program (nodes basics)", () => {
   });
 
   it("falls back to command-derived nodes approve scopes", async () => {
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.pair.list") {
         return {
@@ -524,21 +809,21 @@ describe("cli program (nodes basics)", () => {
   });
 
   it("rejects unsupported node approval backend methods at runtime", async () => {
-    const { callNodePairApprovalGatewayCliRuntime } = await import("./nodes-cli/rpc.runtime.js");
+    const { callNodePairApprovalGatewayCli } = await import("./nodes-cli/rpc.js");
 
     await expect(
-      callNodePairApprovalGatewayCliRuntime(
+      callNodePairApprovalGatewayCli(
         "node.invoke" as never,
         { json: true },
         {},
         { scopes: ["operator.admin"] },
       ),
     ).rejects.toThrow("unsupported node pair approval gateway method: node.invoke");
-    expect(callGateway).not.toHaveBeenCalled();
+    expect(programGatewayCallMock).not.toHaveBeenCalled();
   });
 
   it("runs nodes remove and calls node.pair.remove", async () => {
-    callGateway.mockImplementation(async (...args: unknown[]) => {
+    programGatewayCallMock.mockImplementation(async (...args: unknown[]) => {
       const opts = (args[0] ?? {}) as { method?: string };
       if (opts.method === "node.list") {
         return {

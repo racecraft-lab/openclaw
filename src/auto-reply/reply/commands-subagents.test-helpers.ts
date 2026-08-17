@@ -1,5 +1,7 @@
+// Shared helpers for subagent command tests and directive fixtures.
 import type { InlineDirectives } from "./directive-handling.js";
 
+/** Test helper that returns a fully cleared inline-directive object. */
 export function createEmptyInlineDirectives(): InlineDirectives {
   return {
     cleaned: "",
@@ -19,6 +21,7 @@ export function createEmptyInlineDirectives(): InlineDirectives {
     invalidExecNode: false,
     hasStatusDirective: false,
     hasModelDirective: false,
+    modelSessionOnly: false,
     hasQueueDirective: false,
     queueReset: false,
     hasQueueOptions: false,

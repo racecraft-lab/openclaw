@@ -1,3 +1,4 @@
+// Browser tests cover browser cli actions observe plugin behavior.
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as browserCliSharedModule from "./browser-cli-shared.js";
@@ -54,6 +55,15 @@ describe("browser action observe commands", () => {
         from: "user",
       }),
     ).rejects.toThrow("--max-chars must be a positive integer.");
+    expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown console levels before dispatch", async () => {
+    const program = createActionObserveProgram();
+
+    await expect(
+      program.parseAsync(["browser", "console", "--level", "bogus"], { from: "user" }),
+    ).rejects.toThrow(/error.*warn.*info/u);
     expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
   });
 

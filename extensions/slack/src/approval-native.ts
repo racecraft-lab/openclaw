@@ -1,9 +1,10 @@
-import {
-  createApproverRestrictedNativeApprovalCapability,
-  splitChannelApprovalCapability,
-} from "openclaw/plugin-sdk/approval-delivery-runtime";
+// Slack plugin module implements approval native behavior.
+import { createApproverRestrictedNativeApprovalCapability } from "openclaw/plugin-sdk/approval-delivery-runtime";
 import { createLazyChannelApprovalNativeRuntimeAdapter } from "openclaw/plugin-sdk/approval-handler-adapter-runtime";
-import type { ChannelApprovalNativeRuntimeAdapter } from "openclaw/plugin-sdk/approval-handler-runtime";
+import type {
+  ChannelApprovalKind,
+  ChannelApprovalNativeRuntimeAdapter,
+} from "openclaw/plugin-sdk/approval-handler-runtime";
 import {
   createChannelNativeOriginTargetResolver,
   createNativeApprovalForwardingFallbackSuppressor,
@@ -19,13 +20,12 @@ import {
   normalizeSlackForwardTarget,
   normalizeSlackOriginTarget,
   resolveSessionSlackOriginTarget,
-  resolveSlackApprovalKind,
   resolveSlackFallbackOriginTarget,
+  resolveEnterpriseApprovalTeamId,
   resolveTurnSourceSlackOriginTarget,
   shouldHandleSlackNativeApprovalRequest,
   shouldHandleSlackPluginViaForwardingSession,
   slackTargetsMatch,
-  type SlackApprovalKind,
   type SlackNativeApprovalRequest,
   type SlackOriginTarget,
 } from "./approval-native-gates.js";
@@ -35,9 +35,9 @@ import {
   isSlackExecApprovalClientEnabled,
   resolveSlackExecApprovalTarget,
 } from "./exec-approvals.js";
+import { formatSlackTarget } from "./target-parsing.js";
 
 type ApprovalRequest = SlackNativeApprovalRequest;
-type ApprovalKind = SlackApprovalKind;
 type SlackSuppressionAccountInput = {
   target: { channel: string; accountId?: string | null };
   request: {
@@ -59,7 +59,7 @@ function resolveSlackNativeSuppressionAccountId({
 }
 
 function shouldConsiderSlackNativeForwardingSuppression(
-  input: SlackSuppressionAccountInput & { approvalKind: ApprovalKind },
+  input: SlackSuppressionAccountInput & { approvalKind: ChannelApprovalKind },
 ): boolean {
   const channel = normalizeMessageChannel(input.target.channel) ?? input.target.channel;
   if (channel !== "slack") {
@@ -74,10 +74,11 @@ function shouldConsiderSlackNativeForwardingSuppression(
 
 const resolveSlackOriginTarget = createChannelNativeOriginTargetResolver({
   channel: "slack",
-  shouldHandleRequest: ({ cfg, accountId, request }) =>
+  shouldHandleRequest: ({ cfg, accountId, approvalKind, request }) =>
     shouldHandleSlackNativeApprovalRequest({
       cfg,
       accountId,
+      approvalKind,
       request,
     }),
   resolveTurnSourceTarget: resolveTurnSourceSlackOriginTarget,
@@ -90,7 +91,7 @@ const resolveSlackOriginTarget = createChannelNativeOriginTargetResolver({
 function resolveSlackApproverDmTargets(params: {
   cfg: Parameters<typeof shouldHandleSlackNativeApprovalRequest>[0]["cfg"];
   accountId?: string | null;
-  approvalKind: ApprovalKind;
+  approvalKind: ChannelApprovalKind;
   request: ApprovalRequest;
 }): SlackOriginTarget[] {
   if (
@@ -107,7 +108,10 @@ function resolveSlackApproverDmTargets(params: {
     params.approvalKind === "plugin"
       ? getSlackApprovalApprovers(params)
       : getSlackExecApprovalApprovers(params);
-  return approvers.map((approver) => ({ to: `user:${approver}` }));
+  const teamId = resolveEnterpriseApprovalTeamId(params.request);
+  return approvers.map((approver) => ({
+    to: formatSlackTarget({ kind: "user", id: approver, teamId, explicitKind: true }),
+  }));
 }
 
 const shouldSuppressSlackForwardingFallback =
@@ -158,11 +162,11 @@ const baseSlackApprovalCapability = createApproverRestrictedNativeApprovalCapabi
         cfg,
         accountId,
       }),
-    shouldHandle: ({ cfg, accountId, request }) =>
+    shouldHandle: ({ cfg, accountId, approvalKind, request }) =>
       shouldHandleSlackNativeApprovalRequest({
         cfg,
         accountId,
-        approvalKind: resolveSlackApprovalKind(request),
+        approvalKind,
         request,
       }),
     load: async () =>
@@ -226,12 +230,4 @@ export const slackApprovalCapability: ChannelApprovalCapability = {
         },
       }
     : undefined,
-};
-
-export const slackNativeApprovalAdapter = splitChannelApprovalCapability(slackApprovalCapability);
-
-export const testing = {
-  resolveSessionSlackOriginTarget,
-  resolveTurnSourceSlackOriginTarget,
-  slackTargetsMatch,
 };

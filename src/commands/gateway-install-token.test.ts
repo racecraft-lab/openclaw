@@ -1,3 +1,4 @@
+// Gateway install token tests cover token resolution from config, env, and command options.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/types.js";
 import { resolveGatewayInstallToken } from "./gateway-install-token.js";
@@ -18,11 +19,6 @@ const resolveSecretRefValuesMock = vi.hoisted(() => vi.fn());
 const secretRefKeyMock = vi.hoisted(() => vi.fn(() => "env:default:OPENCLAW_GATEWAY_TOKEN"));
 const randomTokenMock = vi.hoisted(() => vi.fn(() => "generated-token"));
 
-vi.mock("./gateway-install-token.persist.runtime.js", () => ({
-  readConfigFileSnapshotForWrite: readConfigFileSnapshotForWriteMock,
-  replaceConfigFile: replaceConfigFileMock,
-}));
-
 vi.mock("../gateway/auth.js", () => ({
   resolveGatewayAuth: resolveGatewayAuthMock,
 }));
@@ -31,7 +27,8 @@ vi.mock("../gateway/auth-install-policy.js", () => ({
   shouldRequireGatewayTokenForInstall: shouldRequireGatewayTokenForInstallMock,
 }));
 
-vi.mock("../secrets/ref-contract.js", () => ({
+vi.mock("../secrets/ref-contract.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../secrets/ref-contract.js")>()),
   secretRefKey: secretRefKeyMock,
 }));
 
@@ -50,6 +47,11 @@ function firstReplaceConfigRequest(): unknown {
   }
   return call[0];
 }
+
+const persistence = {
+  readConfigFileSnapshotForWrite: readConfigFileSnapshotForWriteMock,
+  replaceConfigFile: replaceConfigFileMock,
+};
 
 describe("resolveGatewayInstallToken", () => {
   beforeEach(() => {
@@ -134,6 +136,7 @@ describe("resolveGatewayInstallToken", () => {
       env: {} as NodeJS.ProcessEnv,
       autoGenerateWhenMissing: true,
       persistGeneratedToken: true,
+      persistence,
     });
 
     expect(result.token).toBeUndefined();
@@ -170,6 +173,7 @@ describe("resolveGatewayInstallToken", () => {
       env: {} as NodeJS.ProcessEnv,
       autoGenerateWhenMissing: true,
       persistGeneratedToken: true,
+      persistence,
     });
 
     expect(result.warnings.join("\n")).toContain("saving to config");
@@ -213,6 +217,7 @@ describe("resolveGatewayInstallToken", () => {
       env: {} as NodeJS.ProcessEnv,
       autoGenerateWhenMissing: true,
       persistGeneratedToken: true,
+      persistence,
     });
 
     expect(result.token).toBeUndefined();
@@ -239,6 +244,7 @@ describe("resolveGatewayInstallToken", () => {
       env: {} as NodeJS.ProcessEnv,
       autoGenerateWhenMissing: true,
       persistGeneratedToken: true,
+      persistence,
     });
 
     expect(result.token).toBeUndefined();

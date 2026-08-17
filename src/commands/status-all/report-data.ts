@@ -1,8 +1,14 @@
-import { canExecRequestNode } from "../../agents/exec-defaults.js";
+// Collects raw data needed to render `openclaw status --all`.
+// This file performs local read-only probes; formatting stays in report-line builders.
+
+import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
 import { readConfigFileSnapshot, resolveGatewayPort } from "../../config/config.js";
 import { readLastGatewayErrorLine } from "../../daemon/diagnostics.js";
-import { inspectPortUsage } from "../../infra/ports.js";
-import { readRestartSentinel } from "../../infra/restart-sentinel.js";
+import { resolveGatewayBindHost, resolveGatewayRequiredListenHosts } from "../../gateway/net.js";
+import { loadExecApprovalsReadOnly } from "../../infra/exec-approvals.js";
+import { inspectPortUsage } from "../../infra/ports-inspect.js";
+import { readRestartSentinelReadOnly } from "../../infra/restart-sentinel.js";
+import { resolvePluginControlPlaneWorkspace } from "../../plugins/control-plane-workspace.js";
 import { buildPluginCompatibilityNotices } from "../../plugins/status.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
 import { getRemoteSkillEligibility } from "../../skills/runtime/remote.js";
@@ -37,6 +43,7 @@ function resolveStatusAllConfigPath(path: string | null | undefined): string {
   return trimmed && trimmed.length > 0 ? trimmed : "(unknown config path)";
 }
 
+/** Collects local diagnosis inputs that are not part of the shared overview scan. */
 async function resolveStatusAllLocalDiagnosis(params: {
   overview: StatusScanOverviewResult;
   progress: StatusAllProgress;
@@ -52,7 +59,7 @@ async function resolveStatusAllLocalDiagnosis(params: {
     snap: ConfigFileSnapshot | null;
     remoteUrlMissing: boolean;
     secretDiagnostics: StatusScanOverviewResult["secretDiagnostics"];
-    sentinel: Awaited<ReturnType<typeof readRestartSentinel>> | null;
+    sentinel: Awaited<ReturnType<typeof readRestartSentinelReadOnly>> | null;
     lastErr: string | null;
     port: number;
     portUsage: Awaited<ReturnType<typeof inspectPortUsage>> | null;
@@ -72,55 +79,72 @@ async function resolveStatusAllLocalDiagnosis(params: {
     gatewayReachable: boolean;
     health: StatusGatewayHealthSafe | undefined;
     deliveryDiagnostics: unknown;
+    exporterDiagnostics: unknown;
     nodeOnlyGateway: NodeOnlyGatewayInfo | null;
   };
 }> {
   const { overview } = params;
-  const snap = await readConfigFileSnapshot().catch(() => null);
+  const snap = await readConfigFileSnapshot({ observe: false }).catch(() => null);
   const configPath = resolveStatusAllConfigPath(snap?.path);
+  const diagnosticsParams = {
+    config: overview.cfg,
+    timeoutMs: Math.min(5000, params.timeoutMs ?? 10_000),
+    gatewayReachable: params.gatewayReachable,
+    ...(params.gatewayCallOverrides ? { callOverrides: params.gatewayCallOverrides } : {}),
+  };
 
-  const health = params.nodeOnlyGateway
-    ? undefined
-    : await resolveStatusGatewayHealthSafe({
-        config: overview.cfg,
-        timeoutMs: Math.min(8000, params.timeoutMs ?? 10_000),
-        gatewayReachable: params.gatewayReachable,
-        gatewayProbeError: params.gatewayProbe?.error ?? null,
-        ...(params.gatewayCallOverrides ? { callOverrides: params.gatewayCallOverrides } : {}),
-      });
-  const diagnostics = params.nodeOnlyGateway
-    ? null
-    : await resolveStatusGatewayDiagnosticsSafe({
-        config: overview.cfg,
-        timeoutMs: Math.min(5000, params.timeoutMs ?? 10_000),
-        gatewayReachable: params.gatewayReachable,
-        ...(params.gatewayCallOverrides ? { callOverrides: params.gatewayCallOverrides } : {}),
-      });
+  const [health, deliveryDiagnostics, exporterDiagnostics] = params.nodeOnlyGateway
+    ? [undefined, null, null]
+    : await Promise.all([
+        resolveStatusGatewayHealthSafe({
+          config: overview.cfg,
+          timeoutMs: Math.min(8000, params.timeoutMs ?? 10_000),
+          gatewayReachable: params.gatewayReachable,
+          gatewayProbeError: params.gatewayProbe?.error ?? null,
+          ...(params.gatewayCallOverrides ? { callOverrides: params.gatewayCallOverrides } : {}),
+        }),
+        resolveStatusGatewayDiagnosticsSafe(diagnosticsParams),
+        resolveStatusGatewayDiagnosticsSafe({
+          ...diagnosticsParams,
+          type: "telemetry.exporter",
+        }),
+      ]);
 
   params.progress.setLabel("Checking local state…");
-  const sentinel = await readRestartSentinel().catch(() => null);
+  // These probes are intentionally best-effort so status-all can still print a partial report.
+  const sentinel = await readRestartSentinelReadOnly().catch(() => null);
   const lastErr = await readLastGatewayErrorLine(process.env).catch(() => null);
   const port = resolveGatewayPort(overview.cfg);
-  const portUsage = await inspectPortUsage(port).catch(() => null);
+  const bindHost = await resolveGatewayBindHost(
+    overview.cfg.gateway?.bind ?? "loopback",
+    overview.cfg.gateway?.customBindHost,
+  );
+  const portUsage = await inspectPortUsage(port, {
+    probeHosts: resolveGatewayRequiredListenHosts(bindHost),
+  }).catch(() => null);
   params.progress.tick();
 
-  const defaultWorkspace =
-    overview.agentStatus.agents.find((a) => a.id === overview.agentStatus.defaultId)
-      ?.workspaceDir ??
-    overview.agentStatus.agents[0]?.workspaceDir ??
-    null;
+  const controlPlaneWorkspace = resolvePluginControlPlaneWorkspace({
+    config: overview.cfg,
+    env: process.env,
+  });
+  const defaultWorkspace = controlPlaneWorkspace.workspaceDir ?? null;
   const skillStatus =
     defaultWorkspace != null
       ? (() => {
           try {
+            // Skill eligibility depends on whether the default agent may request node exec.
+            const nodeSkills = resolveNodeExecEligibility({
+              cfg: overview.cfg,
+              execApprovals: loadExecApprovalsReadOnly(),
+              agentId: controlPlaneWorkspace.agentId,
+            });
             return buildWorkspaceSkillStatus(defaultWorkspace, {
               config: overview.cfg,
               eligibility: {
+                nodeSkills,
                 remote: getRemoteSkillEligibility({
-                  advertiseExecNode: canExecRequestNode({
-                    cfg: overview.cfg,
-                    agentId: overview.agentStatus.defaultId,
-                  }),
+                  advertiseExecNode: nodeSkills.canExec,
                 }),
               },
             });
@@ -157,12 +181,14 @@ async function resolveStatusAllLocalDiagnosis(params: {
       agentStatus: overview.agentStatus,
       gatewayReachable: params.gatewayReachable,
       health,
-      deliveryDiagnostics: diagnostics,
+      deliveryDiagnostics,
+      exporterDiagnostics,
       nodeOnlyGateway: params.nodeOnlyGateway,
     },
   };
 }
 
+/** Builds the full status-all report data model from a completed overview scan. */
 export async function buildStatusAllReportData(params: {
   overview: StatusScanOverviewResult;
   daemon: StatusGatewayServiceSummary;

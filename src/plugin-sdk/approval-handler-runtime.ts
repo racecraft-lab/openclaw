@@ -1,3 +1,20 @@
+/**
+ * Runtime SDK subpath for approval handler adapters and approval view text helpers.
+ */
+import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.js";
+import { normalizeApprovalRequest } from "../infra/approval-types.js";
+import type {
+  ExpiredApprovalView,
+  ResolvedApprovalView,
+} from "../infra/approval-view-model.types.js";
+import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec-approvals.js";
+import {
+  buildPluginApprovalExpiredMessage,
+  buildPluginApprovalResolvedMessage,
+  type PluginApprovalRequest,
+  type PluginApprovalResolved,
+} from "../infra/plugin-approvals.js";
+import { buildApprovalResolvedReplyPayload } from "./approval-renderers.js";
 export {
   createChannelApprovalHandler,
   createChannelApprovalNativeRuntimeAdapter,
@@ -28,24 +45,13 @@ export {
   type PluginApprovalResolvedView,
   type ResolvedApprovalView,
 } from "../infra/approval-handler-runtime.js";
+export type { ChannelApprovalKind } from "../infra/approval-handler-runtime-types.js";
 export { resolveApprovalOverGateway } from "./approval-gateway-runtime.js";
-import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.js";
-import type {
-  ExpiredApprovalView,
-  ResolvedApprovalView,
-} from "../infra/approval-view-model.types.js";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec-approvals.js";
-import {
-  buildPluginApprovalExpiredMessage,
-  buildPluginApprovalResolvedMessage,
-  type PluginApprovalRequest,
-  type PluginApprovalResolved,
-} from "../infra/plugin-approvals.js";
-import { buildApprovalResolvedReplyPayload } from "./approval-renderers.js";
 
 type ApprovalRequest = ExecApprovalRequest | PluginApprovalRequest;
 type ApprovalResolved = ExecApprovalResolved | PluginApprovalResolved;
 
+/** Builds channel-visible resolved approval text for exec and plugin approvals. */
 export function buildChannelApprovalResolvedText(params: {
   request: ApprovalRequest;
   resolved: ApprovalResolved;
@@ -65,21 +71,25 @@ export function buildChannelApprovalResolvedText(params: {
   return payload.text ?? "";
 }
 
+/** Builds channel-visible expiration text for exec and plugin approvals. */
 export function buildChannelApprovalExpiredText(params: {
   request: ApprovalRequest;
   view: ExpiredApprovalView;
 }): string {
-  if (params.view.approvalKind === "plugin") {
-    return buildPluginApprovalExpiredMessage(params.request as PluginApprovalRequest);
+  const request = normalizeApprovalRequest(params.request);
+  if (request.approvalKind === "plugin") {
+    return buildPluginApprovalExpiredMessage(request);
   }
-  return `⏱️ Exec approval expired. ID: ${params.request.id}`;
+  return `⏱️ Exec approval expired. ID: ${request.id}`;
 }
 
+/** Resolves the account id prepared for approval routing with planned/context fallback order. */
 export function resolvePreparedApprovalAccountId(params: {
   plannedAccountId?: string | null;
   contextAccountId?: string | null;
   fallbackAccountId: string;
 }): string;
+/** Resolve prepared approval account id when every source may be missing. */
 export function resolvePreparedApprovalAccountId(params: {
   plannedAccountId?: string | null;
   contextAccountId?: string | null;

@@ -50,11 +50,12 @@ import path from "node:path";
 import { minimatch } from "minimatch";
 import { mutateConfigFile } from "openclaw/plugin-sdk/config-mutation";
 import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
+import { asNullableRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 export type FilePolicyKind = "read" | "write";
-export type FilePolicyAskMode = "off" | "on-miss" | "always";
+type FilePolicyAskMode = "off" | "on-miss" | "always";
 
-export type FilePolicyDecision =
+type FilePolicyDecision =
   | { ok: true; reason: "matched-allow"; maxBytes?: number; followSymlinks: boolean }
   | {
       ok: true;
@@ -85,10 +86,7 @@ type NodeFilePolicyConfig = {
 type FilePolicyConfig = Record<string, NodeFilePolicyConfig>;
 
 function asFilePolicyConfig(value: unknown): FilePolicyConfig | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as FilePolicyConfig;
+  return asNullableRecord(value) as FilePolicyConfig | null;
 }
 
 function readFilePolicyConfigFromPluginConfig(pluginConfig: unknown): FilePolicyConfig | null {
@@ -154,6 +152,13 @@ function matchesAny(target: string, patterns: string[]): boolean {
     }
   }
   return false;
+}
+
+function matchesAnyDeny(target: string, patterns: string[]): boolean {
+  if (matchesAny(target, patterns)) {
+    return true;
+  }
+  return matchesAny(`${target.replace(/[\\/]+$/u, "")}/`, patterns);
 }
 
 function resolveNodePolicy(
@@ -262,7 +267,7 @@ export function evaluateFilePolicy(input: {
 
   // 1. Deny patterns always win.
   const denyPatterns = normalizeGlobs(nodeConfig.denyPaths);
-  if (matchesAny(input.path, denyPatterns)) {
+  if (matchesAnyDeny(input.path, denyPatterns)) {
     return {
       ok: false,
       code: "POLICY_DENIED",
@@ -351,8 +356,7 @@ export async function persistAllowAlways(input: {
     mutate: (draft) => {
       // Plugin config is intentionally plugin-owned; the root OpenClawConfig
       // type only guarantees `Record<string, unknown>` here.
-      const root = draft as unknown as Record<string, unknown>;
-      const plugins = (root.plugins ??= {}) as Record<string, unknown>;
+      const plugins = (draft.plugins ??= {}) as Record<string, unknown>;
       const entries = (plugins.entries ??= {}) as Record<string, unknown>;
       const pluginEntry = (entries["file-transfer"] ??= {}) as Record<string, unknown>;
       const pluginConfig = (pluginEntry.config ??= {}) as Record<string, unknown>;
@@ -367,12 +371,18 @@ export async function persistAllowAlways(input: {
       );
       // Use hasOwnProperty so a node with displayName "constructor" doesn't
       // accidentally hit Object.prototype.constructor and pretend to match.
-      let key = candidates.find((c) => Object.hasOwn(fileTransfer, c));
-      if (!key) {
-        key = assertSafeConfigKey(input.nodeDisplayName ?? input.nodeId);
-        fileTransfer[key] = {};
+      let entry: NodeFilePolicyConfig | undefined;
+      for (const candidate of candidates) {
+        entry = Object.entries(fileTransfer).find(([key]) => key === candidate)?.[1];
+        if (entry) {
+          break;
+        }
       }
-      const entry = fileTransfer[key];
+      if (!entry) {
+        const key = assertSafeConfigKey(input.nodeDisplayName ?? input.nodeId);
+        entry = {};
+        fileTransfer[key] = entry;
+      }
       const list = Array.isArray(entry[field]) ? entry[field] : [];
       if (!list.includes(input.path)) {
         list.push(input.path);

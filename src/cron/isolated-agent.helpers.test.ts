@@ -1,3 +1,4 @@
+// Isolated agent helper tests cover utility behavior used by cron agent runs.
 import { describe, expect, it } from "vitest";
 import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { resolveCronPayloadOutcome } from "./isolated-agent/helpers.js";
@@ -46,6 +47,31 @@ describe("resolveCronPayloadOutcome", () => {
     expect(result.outputText).toBe("**Clawsweeper 6h report**\nClosed: 34 total");
     expect(result.deliveryPayloads).toEqual([
       { text: "**Clawsweeper 6h report**\nClosed: 34 total" },
+    ]);
+  });
+
+  it("lets final assistant text recover multiple plain tool warnings globally", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [
+        {
+          text: "⚠️ 🛠️ zsh (agent) failed",
+          isError: true,
+        },
+        {
+          text: "⚠️ 🛠️ node (agent) failed",
+          isError: true,
+        },
+      ],
+      finalAssistantVisibleText: "**Daily GTM analytics**\nPostHog and revenue summary complete.",
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(false);
+    expect(result.embeddedRunError).toBeUndefined();
+    expect(result.outputText).toBe(
+      "**Daily GTM analytics**\nPostHog and revenue summary complete.",
+    );
+    expect(result.deliveryPayloads).toEqual([
+      { text: "**Daily GTM analytics**\nPostHog and revenue summary complete." },
     ]);
   });
 
@@ -348,6 +374,74 @@ describe("resolveCronPayloadOutcome", () => {
       { text: "Working on it..." },
       { text: "Final weather summary" },
     ]);
+  });
+
+  it("removes an earlier heartbeat acknowledgement from a substantive final result", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "HEARTBEAT_OK" }, { text: "Critical deployment failure" }],
+      finalAssistantVisibleText: "Critical deployment failure",
+    });
+
+    expect(result.deliveryPayloads).toEqual([{ text: "Critical deployment failure" }]);
+    expect(result.deliveryDisposition).toEqual({ kind: "visible" });
+  });
+
+  it("uses producer-owned terminal text when trailing empty payloads follow a result", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "Critical deployment failure" }, { text: "  " }],
+      finalAssistantVisibleText: "Critical deployment failure",
+    });
+
+    expect(result.deliveryPayloads).toEqual([{ text: "Critical deployment failure" }]);
+    expect(result.deliveryDisposition).toEqual({ kind: "visible" });
+  });
+
+  it("keeps a terminal heartbeat acknowledgement intentionally quiet", () => {
+    const payloads = [{ text: "Checked inbox and calendar." }, { text: "HEARTBEAT_OK" }];
+    const result = resolveCronPayloadOutcome({
+      payloads,
+      finalAssistantVisibleText: "HEARTBEAT_OK",
+    });
+
+    expect(result.deliveryPayloads).toEqual(payloads);
+    expect(result.deliveryDisposition).toEqual({ kind: "heartbeat", controlOnly: false });
+  });
+
+  it("records a pure heartbeat acknowledgement as a control-only terminal", () => {
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "HEARTBEAT_OK" }],
+      finalAssistantVisibleText: "HEARTBEAT_OK",
+    });
+
+    expect(result.deliveryDisposition).toEqual({ kind: "heartbeat", controlOnly: true });
+  });
+
+  it("preserves structured output while removing a sibling heartbeat acknowledgement", () => {
+    const mediaPayload = {
+      text: "Here's the report",
+      mediaUrl: "https://example.com/report.png",
+    };
+    const result = resolveCronPayloadOutcome({
+      payloads: [{ text: "HEARTBEAT_OK" }, mediaPayload],
+      finalAssistantVisibleText: "HEARTBEAT_OK",
+    });
+
+    expect(result.deliveryPayloads).toEqual([mediaPayload]);
+    expect(result.deliveryDisposition).toEqual({ kind: "visible" });
+  });
+
+  it("keeps a heartbeat-labelled payload when the same payload carries media", () => {
+    const mediaPayload = {
+      text: "HEARTBEAT_OK",
+      mediaUrl: "https://example.com/report.png",
+    };
+    const result = resolveCronPayloadOutcome({
+      payloads: [mediaPayload],
+      finalAssistantVisibleText: "HEARTBEAT_OK",
+    });
+
+    expect(result.deliveryPayloads).toEqual([mediaPayload]);
+    expect(result.deliveryDisposition).toEqual({ kind: "visible" });
   });
 
   it("does not promote narrated denial markers in summary text to fatal errors", () => {

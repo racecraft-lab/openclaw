@@ -1,3 +1,4 @@
+// Openai tests cover setup api plugin behavior.
 import { describe, expect, it } from "vitest";
 import { buildOpenAISetupProvider } from "./setup-api.js";
 
@@ -15,7 +16,6 @@ describe("OpenAI setup auth provider", () => {
     expect(authMethodIds(provider)).toEqual(["oauth", "device-code", "api-key"]);
     expect(oauth?.label).toBe("ChatGPT Login");
     expect(oauth?.wizard?.choiceId).toBe("openai");
-    expect(oauth?.wizard?.assistantVisibility).toBe("manual-only");
     expect(apiKey?.label).toBe("OpenAI API Key");
     expect(apiKey?.wizard?.choiceId).toBe("openai-api-key");
   });

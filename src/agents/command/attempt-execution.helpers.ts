@@ -1,6 +1,11 @@
+/**
+ * Helper functions for agent attempt execution, Claude CLI transcript probing,
+ * fallback prompts, and ACP visible-text accumulation.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
   isSilentReplyPrefixText,
   isSilentReplyText,
@@ -8,11 +13,19 @@ import {
   startsWithSilentToken,
   stripLeadingSilentToken,
 } from "../../auto-reply/tokens.js";
-import { resolveToolUseId, type ToolContentBlock } from "../../chat/tool-content.js";
+import {
+  isToolCallBlock,
+  resolveToolUseId,
+  type ToolContentBlock,
+} from "../../chat/tool-content.js";
 import {
   type ClaudeCliFallbackSeed,
   readClaudeCliFallbackSeed,
 } from "../../gateway/cli-session-history.js";
+import {
+  buildAgentRunTerminalReplySnapshot,
+  type AgentRunTerminalReplySnapshot,
+} from "../agent-run-terminal-reply.js";
 import { cliBackendLog } from "../cli-runner/log.js";
 import { resolveClaudeCliProjectDirForWorkspace } from "./claude-cli-project-dir.js";
 
@@ -83,7 +96,8 @@ export async function sessionFileHasContent(sessionFile: string | undefined): Pr
   return await jsonlFileHasAssistantMessage(sessionFile);
 }
 
-export function claudeCliSessionTranscriptPath(params: {
+/** Resolves the expected Claude CLI transcript JSONL path for a session. */
+function claudeCliSessionTranscriptPath(params: {
   sessionId: string | undefined;
   workspaceDir: string | undefined;
   homeDir?: string;
@@ -108,6 +122,7 @@ export function claudeCliSessionTranscriptPath(params: {
 const CLAUDE_CLI_TRANSCRIPT_FLUSH_GRACE_MS = 250;
 const CLAUDE_CLI_ORPHAN_PROBE_TAIL_BYTES = 1024 * 1024;
 
+/** Checks whether Claude CLI has flushed assistant content for a session. */
 export async function claudeCliSessionTranscriptHasContent(params: {
   sessionId: string | undefined;
   workspaceDir: string | undefined;
@@ -243,6 +258,7 @@ async function jsonlFileHasOrphanedTrailingToolUse(filePath: string): Promise<bo
   }
 }
 
+/** Checks whether the latest Claude CLI transcript tail has unanswered tool use. */
 export async function claudeCliSessionTranscriptHasOrphanedToolUse(params: {
   sessionId: string | undefined;
   workspaceDir: string | undefined;
@@ -259,6 +275,7 @@ export async function claudeCliSessionTranscriptHasOrphanedToolUse(params: {
   return await jsonlFileHasOrphanedTrailingToolUse(expectedPath);
 }
 
+/** Builds the retry prompt sent to fallback models after a failed attempt. */
 export function resolveFallbackRetryPrompt(params: {
   body: string;
   isFallbackRetry: boolean;
@@ -312,7 +329,7 @@ function extractFallbackTurnText(message: FallbackTurnLikeMessage): string {
     // Tool calls: render as a compact "(tool: name)" hint so the fallback
     // model sees the conversation flow without the full tool argument blob,
     // which is rarely useful out of context and chews through char budget.
-    if (rec.type === "tool_use" && typeof rec.name === "string") {
+    if (isToolCallBlock(rec) && typeof rec.name === "string") {
       parts.push(`(tool call: ${rec.name})`);
       continue;
     }
@@ -370,7 +387,7 @@ function formatFallbackTurns(
  * Returns an empty string when neither a summary nor any usable turn fits in
  * the budget; callers can treat that as "no context to seed".
  */
-export function formatClaudeCliFallbackPrelude(
+function formatClaudeCliFallbackPrelude(
   seed: ClaudeCliFallbackSeed,
   options?: { charBudget?: number },
 ): string {
@@ -390,7 +407,7 @@ export function formatClaudeCliFallbackPrelude(
       // Truncate the summary at a word boundary if it's huge; clearly mark
       // the truncation so the fallback model treats the prelude as a hint,
       // not exhaustive state.
-      const slice = seed.summaryText.slice(0, Math.max(0, remaining - 64));
+      const slice = truncateUtf16Safe(seed.summaryText, Math.max(0, remaining - 64));
       const lastBreak = slice.lastIndexOf(" ");
       const trimmed = lastBreak > 0 ? slice.slice(0, lastBreak).trimEnd() : slice.trimEnd();
       sections.push(`\nSummary of earlier conversation (truncated):\n${trimmed} …`);
@@ -435,6 +452,7 @@ export function buildClaudeCliFallbackContextPrelude(params: {
   return formatClaudeCliFallbackPrelude(seed, { charBudget: params.charBudget });
 }
 
+/** Creates an accumulator that strips ACP silent-reply prefixes while streaming. */
 export function createAcpVisibleTextAccumulator() {
   let pendingSilentPrefix = "";
   let visibleText = "";
@@ -524,5 +542,17 @@ export function createAcpVisibleTextAccumulator() {
     finalizeRaw(): string {
       return visibleText;
     },
+    finalizeReplySnapshot(): AgentRunTerminalReplySnapshot {
+      return buildAgentRunTerminalReplySnapshot({
+        visibleText,
+        rawText: pendingSilentPrefix,
+      });
+    },
   };
+}
+
+if (process.env.VITEST || process.env.NODE_ENV === "test") {
+  (globalThis as Record<PropertyKey, unknown>)[
+    Symbol.for("openclaw.attemptExecutionHelpersTestApi")
+  ] = { claudeCliSessionTranscriptPath, formatClaudeCliFallbackPrelude };
 }

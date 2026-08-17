@@ -1,3 +1,4 @@
+// Ensure Cli Startup Build tests cover ensure cli startup build script behavior.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,7 +7,7 @@ import {
   ensureCliStartupBuild,
   hasCliStartupBuild,
   resolveCliStartupBuildTimeoutMs,
-} from "../../scripts/ensure-cli-startup-build.mjs";
+} from "../../scripts/ensure-cli-startup-build.mts";
 
 const tempRoots: string[] = [];
 
@@ -14,7 +15,7 @@ function makeTempRoot(): string {
   const root = mkdtempSync(path.join(tmpdir(), "openclaw-cli-startup-build-"));
   tempRoots.push(root);
   mkdirSync(path.join(root, "scripts"), { recursive: true });
-  writeFileSync(path.join(root, "scripts", "build-all.mjs"), "", "utf8");
+  writeFileSync(path.join(root, "scripts", "build-all.mts"), "", "utf8");
   return root;
 }
 
@@ -78,7 +79,7 @@ describe("ensure-cli-startup-build", () => {
     expect(calls).toEqual([
       {
         command: "/node",
-        args: [path.join(root, "scripts", "build-all.mjs"), "cliStartup"],
+        args: ["--import", "tsx", path.join(root, "scripts", "build-all.mts"), "cliStartup"],
         options: expect.objectContaining({
           cwd: root,
           killSignal: "SIGKILL",
@@ -107,7 +108,7 @@ describe("ensure-cli-startup-build", () => {
     expect(calls).toEqual([
       {
         command: "/node",
-        args: [path.join(root, "scripts", "build-all.mjs"), "cliStartup"],
+        args: ["--import", "tsx", path.join(root, "scripts", "build-all.mts"), "cliStartup"],
         options: expect.objectContaining({
           cwd: root,
           killSignal: "SIGKILL",

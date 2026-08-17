@@ -1,3 +1,8 @@
+/**
+ * Sandbox configuration resolver.
+ *
+ * Merges global and agent settings into normalized Docker, SSH, browser, prune, scope, and tool-policy config.
+ */
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -156,7 +161,7 @@ export function resolveSandboxBrowserConfig(params: {
     noVncPort:
       agentBrowser?.noVncPort ?? globalBrowser?.noVncPort ?? DEFAULT_SANDBOX_BROWSER_NOVNC_PORT,
     headless: agentBrowser?.headless ?? globalBrowser?.headless ?? false,
-    enableNoVnc: agentBrowser?.enableNoVnc ?? globalBrowser?.enableNoVnc ?? true,
+    noVncEnabled: agentBrowser?.noVncEnabled ?? globalBrowser?.noVncEnabled ?? true,
     allowHostControl: agentBrowser?.allowHostControl ?? globalBrowser?.allowHostControl ?? false,
     autoStart: agentBrowser?.autoStart ?? globalBrowser?.autoStart ?? true,
     autoStartTimeoutMs: resolveSandboxBrowserAutoStartTimeoutMs(
@@ -245,6 +250,7 @@ export function resolveSandboxConfigForAgent(
   });
 
   const toolPolicy = resolveSandboxToolPolicyForAgent(cfg, agentId);
+  const scopedAgentDocker = scope === "shared" ? undefined : agentSandbox?.docker;
 
   return {
     mode: agentSandbox?.mode ?? agent?.mode ?? "off",
@@ -253,10 +259,14 @@ export function resolveSandboxConfigForAgent(
     workspaceAccess: agentSandbox?.workspaceAccess ?? agent?.workspaceAccess ?? "none",
     workspaceRoot:
       agentSandbox?.workspaceRoot ?? agent?.workspaceRoot ?? DEFAULT_SANDBOX_WORKSPACE_ROOT,
+    dockerTmpfsSource:
+      scopedAgentDocker?.tmpfs === undefined && agent?.docker?.tmpfs === undefined
+        ? "default"
+        : "configured",
     docker: resolveSandboxDockerConfig({
       scope,
       globalDocker: agent?.docker,
-      agentDocker: agentSandbox?.docker,
+      agentDocker: scopedAgentDocker,
     }),
     ssh: resolveSandboxSshConfig({
       scope,

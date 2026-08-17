@@ -1,20 +1,21 @@
+// Embedded run entry tests cover runtime skill entries serialized into agent runs.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
   type OpenClawConfig,
 } from "../../config/config.js";
-import * as skillsWorkspaceModule from "../loading/workspace.js";
+import * as skillsLoaderModule from "../loading/workspace-skill-loader.js";
 import type { SkillSnapshot } from "../types.js";
 import { resolveEmbeddedRunSkillEntries } from "./embedded-run-entries.js";
 
 describe("resolveEmbeddedRunSkillEntries", () => {
-  const loadWorkspaceSkillEntriesSpy = vi.spyOn(skillsWorkspaceModule, "loadWorkspaceSkillEntries");
+  const loadWorkspaceSkillsSpy = vi.spyOn(skillsLoaderModule, "loadWorkspaceSkills");
 
   beforeEach(() => {
     clearRuntimeConfigSnapshot();
-    loadWorkspaceSkillEntriesSpy.mockReset();
-    loadWorkspaceSkillEntriesSpy.mockReturnValue([]);
+    loadWorkspaceSkillsSpy.mockReset();
+    loadWorkspaceSkillsSpy.mockReturnValue([]);
   });
 
   it("loads skill entries with config when no resolved snapshot skills exist", () => {
@@ -36,8 +37,8 @@ describe("resolveEmbeddedRunSkillEntries", () => {
     });
 
     expect(result.shouldLoadSkillEntries).toBe(true);
-    expect(loadWorkspaceSkillEntriesSpy).toHaveBeenCalledTimes(1);
-    expect(loadWorkspaceSkillEntriesSpy).toHaveBeenCalledWith("/tmp/workspace", { config });
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledTimes(1);
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledWith("/tmp/workspace", { config });
   });
 
   it("threads agentId through live skill loading", () => {
@@ -51,9 +52,37 @@ describe("resolveEmbeddedRunSkillEntries", () => {
       },
     });
 
-    expect(loadWorkspaceSkillEntriesSpy).toHaveBeenCalledWith("/tmp/workspace", {
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledWith("/tmp/workspace", {
       config: {},
       agentId: "writer",
+    });
+  });
+
+  it("can constrain live loading to materialized workspace skills", () => {
+    const eligibility = {
+      remote: {
+        platforms: ["linux"],
+        hasBin: () => false,
+        hasAnyBin: () => true,
+        note: "sandbox",
+      },
+    };
+
+    resolveEmbeddedRunSkillEntries({
+      workspaceDir: "/tmp/workspace/.openclaw/sandbox-skills",
+      config: {},
+      eligibility,
+      skillsSnapshot: {
+        prompt: "skills prompt",
+        skills: [],
+      },
+      workspaceOnly: true,
+    });
+
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledWith("/tmp/workspace/.openclaw/sandbox-skills", {
+      config: {},
+      eligibility,
+      workspaceOnly: true,
     });
   });
 
@@ -91,7 +120,7 @@ describe("resolveEmbeddedRunSkillEntries", () => {
       },
     });
 
-    expect(loadWorkspaceSkillEntriesSpy).toHaveBeenCalledWith("/tmp/workspace", {
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledWith("/tmp/workspace", {
       config: runtimeConfig,
     });
   });
@@ -131,7 +160,7 @@ describe("resolveEmbeddedRunSkillEntries", () => {
       },
     });
 
-    expect(loadWorkspaceSkillEntriesSpy).toHaveBeenCalledWith("/tmp/workspace", {
+    expect(loadWorkspaceSkillsSpy).toHaveBeenCalledWith("/tmp/workspace", {
       config: callerConfig,
     });
   });
@@ -153,6 +182,6 @@ describe("resolveEmbeddedRunSkillEntries", () => {
       shouldLoadSkillEntries: false,
       skillEntries: [],
     });
-    expect(loadWorkspaceSkillEntriesSpy).not.toHaveBeenCalled();
+    expect(loadWorkspaceSkillsSpy).not.toHaveBeenCalled();
   });
 });

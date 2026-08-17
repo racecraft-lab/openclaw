@@ -1,3 +1,4 @@
+// Lazy command implementations for routes that can bypass full Commander registration.
 import { defaultRuntime } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import {
@@ -6,6 +7,7 @@ import {
   parseChannelsStatusRouteArgs,
   parseConfigGetRouteArgs,
   parseConfigUnsetRouteArgs,
+  parseGatewayHealthRouteArgs,
   parseGatewayStatusRouteArgs,
   parseHealthRouteArgs,
   parseModelsListRouteArgs,
@@ -26,11 +28,13 @@ type ModelsListCommandModule = typeof import("../../commands/models/list.list-co
 type ModelsStatusCommandModule = typeof import("../../commands/models/list.status-command.js");
 type TasksJsonCommandModule = typeof import("../../commands/tasks-json.js");
 
-export type RoutedCommandDefinition<TParse extends RouteArgParser<unknown>> = {
+/** Typed parsed route definition that binds one parser to its runner. */
+type RoutedCommandDefinition<TParse extends RouteArgParser<unknown>> = {
   parseArgs: TParse;
   runParsedArgs: (args: ParsedRouteArgs<TParse>) => Promise<void>;
 };
 
+/** Erased routed-command definition map shape used by route-spec generation. */
 export type AnyRoutedCommandDefinition = {
   parseArgs: RouteArgParser<unknown>;
   runParsedArgs: (args: never) => Promise<void>;
@@ -76,6 +80,7 @@ function loadTasksJsonCommand(): Promise<TasksJsonCommandModule> {
   return tasksJsonCommandLoader.load();
 }
 
+/** Route id to lazy parser/runner definition. */
 export const routedCommandDefinitions = {
   health: defineRoutedCommand({
     parseArgs: parseHealthRouteArgs,
@@ -94,6 +99,7 @@ export const routedCommandDefinitions = {
             deep: args.deep,
             all: args.all,
             usage: args.usage,
+            ...(args.agent !== undefined ? { agent: args.agent } : {}),
             timeoutMs: args.timeoutMs,
           },
           defaultRuntime,
@@ -109,6 +115,13 @@ export const routedCommandDefinitions = {
     runParsedArgs: async (args) => {
       const { runDaemonStatus } = await import("../daemon-cli/status.js");
       await runDaemonStatus(args);
+    },
+  }),
+  "gateway-health": defineRoutedCommand({
+    parseArgs: parseGatewayHealthRouteArgs,
+    runParsedArgs: async (args) => {
+      const { runGatewayHealthJsonRoute } = await import("../gateway-cli/health-route.js");
+      await runGatewayHealthJsonRoute(args, defaultRuntime);
     },
   }),
   sessions: defineRoutedCommand({

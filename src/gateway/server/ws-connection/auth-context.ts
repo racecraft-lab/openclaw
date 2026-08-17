@@ -1,3 +1,4 @@
+// WebSocket auth context resolves handshake credentials before device pairing and capability checks run.
 import type { IncomingMessage } from "node:http";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
@@ -12,6 +13,7 @@ import {
   type GatewayAuthResult,
   type ResolvedGatewayAuth,
 } from "../../auth.js";
+import { PROXY_ATTRIBUTION_REQUIRED_REASON } from "../../ingress-attribution.js";
 import { withSerializedRateLimitAttempt } from "../../rate-limit-attempt-serialization.js";
 
 type HandshakeConnectAuth = {
@@ -20,16 +22,17 @@ type HandshakeConnectAuth = {
   deviceToken?: string;
   password?: string;
   approvalRuntimeToken?: string;
+  agentRuntimeIdentityToken?: string;
 };
 
-export type DeviceTokenCandidateSource = "explicit-device-token" | "shared-token-fallback";
+type DeviceTokenCandidateSource = "explicit-device-token" | "shared-token-fallback";
 
-export type ConnectAuthState = {
+type ConnectAuthState = {
   authResult: GatewayAuthResult;
   authOk: boolean;
   authMethod: GatewayAuthResult["method"];
   sharedAuthOk: boolean;
-  sharedAuthProvided: boolean;
+  pendingSharedAuthFailure: boolean;
   bootstrapTokenCandidate?: string;
   deviceTokenCandidate?: string;
   deviceTokenCandidateSource?: DeviceTokenCandidateSource;
@@ -47,7 +50,7 @@ type VerifyDeviceTokenResult = {
 };
 type VerifyBootstrapTokenResult = { ok: boolean; reason?: string };
 
-export type ConnectAuthDecision = {
+type ConnectAuthDecision = {
   authResult: GatewayAuthResult;
   authOk: boolean;
   authMethod: GatewayAuthResult["method"];
@@ -136,8 +139,10 @@ export async function resolveConnectAuthState(params: {
   const bootstrapTokenCandidate = params.hasDeviceIdentity
     ? normalizeOptionalString(params.connectAuth?.bootstrapToken)
     : undefined;
-  const { token: deviceTokenCandidate, source: deviceTokenCandidateSource } =
-    params.hasDeviceIdentity ? resolveDeviceTokenCandidate(params.connectAuth) : {};
+  const { token: deviceCredential, source: deviceCredentialSource } = params.hasDeviceIdentity
+    ? resolveDeviceTokenCandidate(params.connectAuth)
+    : {};
+  const deferRateLimitFailure = Boolean(deviceCredential);
 
   const authResult: GatewayAuthResult = await authorizeWsControlUiGatewayConnect({
     auth: params.resolvedAuth,
@@ -148,6 +153,7 @@ export async function resolveConnectAuthState(params: {
     rateLimiter: sharedAuthProvided ? params.rateLimiter : undefined,
     clientIp: params.clientIp,
     rateLimitScope: AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
+    deferRateLimitFailure,
   });
 
   const sharedAuthResult =
@@ -169,6 +175,9 @@ export async function resolveConnectAuthState(params: {
     (sharedAuthResult?.ok === true &&
       (sharedAuthResult.method === "token" || sharedAuthResult.method === "password")) ||
     (authResult.ok && authResult.method === "trusted-proxy");
+  const pendingSharedAuthFailure =
+    deferRateLimitFailure &&
+    (authResult.reason === "token_mismatch" || authResult.reason === "password_mismatch");
 
   return {
     authResult,
@@ -176,10 +185,10 @@ export async function resolveConnectAuthState(params: {
     authMethod:
       authResult.method ?? (params.resolvedAuth.mode === "password" ? "password" : "token"),
     sharedAuthOk,
-    sharedAuthProvided,
+    pendingSharedAuthFailure,
     bootstrapTokenCandidate,
-    deviceTokenCandidate,
-    deviceTokenCandidateSource,
+    deviceTokenCandidate: deviceCredential,
+    deviceTokenCandidateSource: deviceCredentialSource,
   };
 }
 
@@ -212,7 +221,13 @@ async function resolveConnectAuthDecisionCore(
   let deviceTokenSharedGatewaySessionGeneration: string | undefined;
   let pendingBootstrapFailure = false;
 
-  function finish(): ConnectAuthDecision {
+  async function finish(): Promise<ConnectAuthDecision> {
+    if (params.state.pendingSharedAuthFailure && !authOk) {
+      await params.rateLimiter?.recordFailureAndDelay(
+        params.clientIp,
+        AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
+      );
+    }
     if (pendingBootstrapFailure && !authOk) {
       params.rateLimiter?.recordFailure(params.clientIp, AUTH_RATE_LIMIT_SCOPE_BOOTSTRAP_TOKEN);
     }
@@ -222,6 +237,13 @@ async function resolveConnectAuthDecisionCore(
       authMethod,
       deviceTokenSharedGatewaySessionGeneration,
     };
+  }
+
+  // Proxy attribution is an ingress failure, not another credential candidate.
+  // Device and bootstrap fallbacks must not turn an untrusted forwarded chain
+  // into an authenticated request.
+  if (authResult.reason === PROXY_ATTRIBUTION_REQUIRED_REASON) {
+    return await finish();
   }
 
   const bootstrapTokenCandidate = params.state.bootstrapTokenCandidate;
@@ -276,7 +298,7 @@ async function resolveConnectAuthDecisionCore(
 
   const deviceTokenCandidate = params.state.deviceTokenCandidate;
   if (!params.hasDeviceIdentity || !params.deviceId || authOk || !deviceTokenCandidate) {
-    return finish();
+    return await finish();
   }
 
   let deviceTokenRateLimited = false;
@@ -309,9 +331,6 @@ async function resolveConnectAuthDecisionCore(
         deviceTokenSharedGatewaySessionGeneration = tokenCheck.issuer.generation;
       }
       params.rateLimiter?.reset(params.clientIp, AUTH_RATE_LIMIT_SCOPE_DEVICE_TOKEN);
-      if (params.state.sharedAuthProvided) {
-        params.rateLimiter?.reset(params.clientIp, AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET);
-      }
     } else {
       authResult = {
         ok: false,
@@ -325,5 +344,5 @@ async function resolveConnectAuthDecisionCore(
     }
   }
 
-  return finish();
+  return await finish();
 }

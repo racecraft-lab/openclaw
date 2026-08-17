@@ -1,3 +1,8 @@
+/**
+ * Auth profile health summarization.
+ * Classifies stored and runtime credentials into profile/provider rollups for
+ * status commands and doctor output without prompting keychain access.
+ */
 import {
   findNormalizedProviderValue,
   normalizeProviderId,
@@ -15,7 +20,10 @@ import { resolveAuthProfileDisplayLabel } from "./auth-profiles/display.js";
 import { resolveEffectiveOAuthCredential } from "./auth-profiles/effective-oauth.js";
 import { resolveAuthProfileOrder } from "./auth-profiles/order.js";
 import type { AuthProfileCredential, AuthProfileStore } from "./auth-profiles/types.js";
-import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
+import {
+  type ProviderAuthAliasLookupParams,
+  resolveProviderIdForAuth,
+} from "./provider-auth-aliases.js";
 
 type AuthProfileSource = "store";
 
@@ -57,10 +65,7 @@ export type AuthHealthSummary = {
 
 export const DEFAULT_OAUTH_WARN_MS = 24 * 60 * 60 * 1000;
 
-function resolveAuthProfileSource(_profileId: string): AuthProfileSource {
-  return "store";
-}
-
+/** Format a remaining-duration value for compact auth status displays. */
 export function formatRemainingShort(
   remainingMs?: number,
   opts?: {
@@ -135,11 +140,26 @@ function buildProfileHealth(params: {
     allowKeychainPrompt,
   } = params;
   const label = resolveAuthProfileDisplayLabel({ cfg, store, profileId });
-  const source = resolveAuthProfileSource(profileId);
+  const source: AuthProfileSource = "store";
   const healthCredential = runtimeCredential ?? credential;
   const provider = normalizeProviderId(healthCredential.provider);
 
   if (healthCredential.type === "api_key") {
+    const eligibility = evaluateStoredCredentialEligibility({
+      credential: healthCredential,
+      now,
+    });
+    if (!eligibility.eligible) {
+      return {
+        profileId,
+        provider,
+        type: "api_key",
+        status: "missing",
+        reasonCode: eligibility.reasonCode,
+        source,
+        label,
+      };
+    }
     return {
       profileId,
       provider,
@@ -215,6 +235,7 @@ function buildProfileHealth(params: {
   }
 
   const effectiveCredential = resolveEffectiveOAuthCredential({
+    store,
     profileId,
     credential: healthCredential,
     allowKeychainPrompt,
@@ -253,6 +274,7 @@ function buildProfileHealth(params: {
   };
 }
 
+/** Build profile and provider auth health rollups from an auth profile store. */
 export function buildAuthHealthSummary(params: {
   store: AuthProfileStore;
   cfg?: OpenClawConfig;
@@ -260,6 +282,8 @@ export function buildAuthHealthSummary(params: {
   providers?: string[];
   runtimeCredentialsByProvider?: ReadonlyMap<string, AuthProfileCredential>;
   allowKeychainPrompt?: boolean;
+  /** Exact prepared metadata for request paths that must not rediscover plugin aliases. */
+  authAliasLookupParams?: ProviderAuthAliasLookupParams;
 }): AuthHealthSummary {
   const now = Date.now();
   const warnAfterMs = params.warnAfterMs ?? DEFAULT_OAUTH_WARN_MS;
@@ -319,7 +343,10 @@ export function buildAuthHealthSummary(params: {
   }
 
   const resolveExplicitAuthOrder = (provider: string): string[] | undefined => {
-    const authProvider = resolveProviderIdForAuth(provider, { config: params.cfg });
+    const authProvider = resolveProviderIdForAuth(provider, {
+      config: params.cfg,
+      ...params.authAliasLookupParams,
+    });
     return (
       findNormalizedProviderValue(params.store.order, authProvider) ??
       findNormalizedProviderValue(params.store.order, provider) ??
@@ -338,6 +365,7 @@ export function buildAuthHealthSummary(params: {
       cfg: params.cfg,
       store: params.store,
       provider: provider.provider,
+      authAliasLookupParams: params.authAliasLookupParams,
     });
     const orderedProfiles = ordered
       .map((profileId) => provider.profiles.find((profile) => profile.profileId === profileId))
@@ -374,7 +402,11 @@ export function buildAuthHealthSummary(params: {
     let earliestExpiry: number | undefined;
     for (const profile of effectiveProfiles) {
       if (profile.type === "api_key") {
-        hasApiKeyProfile = true;
+        if (profile.status === "static") {
+          hasApiKeyProfile = true;
+        } else if (profile.status === "missing") {
+          hasMissing = true;
+        }
         continue;
       }
       if (profile.type !== "oauth" && profile.type !== "token") {
@@ -397,7 +429,7 @@ export function buildAuthHealthSummary(params: {
     }
 
     if (!hasExpirableProfile) {
-      provider.status = hasApiKeyProfile ? "static" : "missing";
+      provider.status = hasMissing ? "missing" : hasApiKeyProfile ? "static" : "missing";
       continue;
     }
 

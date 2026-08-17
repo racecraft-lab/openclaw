@@ -1,3 +1,4 @@
+// Sub-CLI registry that lazily wires gateway, models, devices, plugins, and plugin commands.
 import type { Command } from "commander";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
@@ -18,13 +19,7 @@ import {
   registerCommandGroups,
   type CommandGroupEntry,
 } from "./register-command-groups.js";
-import {
-  getSubCliCommandsWithSubcommands,
-  getSubCliEntries as getSubCliEntryDescriptors,
-  type SubCliDescriptor,
-} from "./subcli-descriptors.js";
-
-export { getSubCliCommandsWithSubcommands };
+import { getSubCliEntriesCore, type SubCliDescriptor } from "./subcli-descriptors.js";
 
 export type SubCliRegistrationContext = {
   purpose?: "runtime" | "completion";
@@ -53,6 +48,7 @@ function shouldRegisterGatewayRunOnly(name: string, argv: string[]): boolean {
 }
 
 async function registerGatewayRunOnly(program: Command): Promise<void> {
+  // Hot path for `gateway run`: avoid loading the full gateway command tree.
   const { addGatewayRunCommand } = await import("../gateway-cli/run-command.js");
   removeCommandByName(program, "gateway");
   const gateway = addGatewayRunCommand(
@@ -120,12 +116,19 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       exportName: "registerModelsCli",
     },
     {
+      commandNames: ["promos"],
+      loadModule: () => import("../promos-cli.js"),
+      exportName: "registerPromosCli",
+    },
+    {
       commandNames: ["infer", "capability"],
       loadModule: () => import("../capability-cli.js"),
       exportName: "registerCapabilityCli",
     },
     {
-      commandNames: ["approvals"],
+      // exec-approvals is a commander alias on the approvals command; the lazy
+      // router only routes names listed here, so the alias must be owned too.
+      commandNames: ["approvals", "exec-approvals"],
       loadModule: () => import("../exec-approvals-cli.js"),
       exportName: "registerExecApprovalsCli",
     },
@@ -149,9 +152,24 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       exportName: "registerDevicesCli",
     },
     {
+      commandNames: ["users"],
+      loadModule: () => import("../users-cli.js"),
+      exportName: "registerUsersCli",
+    },
+    {
       commandNames: ["node"],
       loadModule: () => import("../node-cli.js"),
       exportName: "registerNodeCli",
+    },
+    {
+      commandNames: ["connect"],
+      loadModule: () => import("../connect-cli.js"),
+      exportName: "registerConnectCli",
+    },
+    {
+      commandNames: ["worker"],
+      loadModule: () => import("../worker-cli.js"),
+      exportName: "registerWorkerCli",
     },
     {
       commandNames: ["sandbox"],
@@ -159,12 +177,34 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       exportName: "registerSandboxCli",
     },
     {
+      commandNames: ["fleet"],
+      loadModule: () => import("../fleet-cli.js"),
+      exportName: "registerFleetCli",
+    },
+    {
+      commandNames: ["worktrees"],
+      loadModule: () => import("../worktrees-cli.js"),
+      exportName: "registerWorktreesCli",
+    },
+    {
+      commandNames: ["attach"],
+      loadModule: () => import("../attach-cli.js"),
+      exportName: "registerAttachCli",
+    },
+    {
       commandNames: ["tui", "terminal", "chat"],
       loadModule: () => import("../tui-cli.js"),
       exportName: "registerTuiCli",
     },
     {
-      commandNames: ["cron"],
+      commandNames: ["resume"],
+      loadModule: () => import("../resume-cli.js"),
+      exportName: "registerResumeCli",
+    },
+    {
+      // automations is a commander alias on the cron command; the lazy
+      // router only routes names listed here, so the alias must be owned too.
+      commandNames: ["cron", "automations"],
       loadModule: () => import("../cron-cli.js"),
       exportName: "registerCronCli",
     },
@@ -279,7 +319,7 @@ function resolveSubCliCommandGroups(
   argv: string[],
   context: SubCliRegistrationContext = {},
 ): CommandGroupEntry[] {
-  const descriptors = getSubCliEntryDescriptors();
+  const descriptors = getSubCliEntriesCore();
   const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
   return buildCommandGroupEntries(
     descriptors,
@@ -291,10 +331,10 @@ function resolveSubCliCommandGroups(
 }
 
 export function getSubCliEntries(): ReadonlyArray<SubCliDescriptor> {
-  return getSubCliEntryDescriptors();
+  return getSubCliEntriesCore();
 }
 
-export async function registerSubCliByName(
+export async function registerSubCliByNameCore(
   program: Command,
   name: string,
   argv: string[] = process.argv,
@@ -307,7 +347,7 @@ export async function registerSubCliByName(
   return registerCommandGroupByName(program, resolveSubCliCommandGroups(argv, context), name);
 }
 
-export function registerSubCliCommands(program: Command, argv: string[] = process.argv) {
+export function registerSubCliCommandsCore(program: Command, argv: string[] = process.argv) {
   const { primary } = resolveCliArgvInvocation(argv);
   registerCommandGroups(program, resolveSubCliCommandGroups(argv), {
     eager: shouldEagerRegisterSubcommands(),

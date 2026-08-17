@@ -1,5 +1,8 @@
+// Telegram tests cover bot.create telegram bot.media group skip warning plugin behavior.
 import { setTimeout as delay } from "node:timers/promises";
+import { coerceErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { telegramBotInfoForTest } from "./bot.create-telegram-bot.test-support.js";
 
 const saveRemoteMedia = vi.fn();
 const saveMediaBuffer = vi.fn();
@@ -19,7 +22,7 @@ vi.mock("./bot/delivery.resolve-media.runtime.js", async () => {
   );
   return {
     readRemoteMediaBuffer: (...args: unknown[]) => readRemoteMediaBuffer(...args),
-    formatErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
+    formatErrorMessage: coerceErrorMessage,
     logVerbose: () => {},
     MediaFetchError: actual.MediaFetchError,
     resolveTelegramApiBase: (apiRoot?: string) =>
@@ -42,16 +45,9 @@ vi.mock("./sticker-cache.js", () => ({
 }));
 
 const harness = await import("./bot.create-telegram-bot.test-harness.js");
-const {
-  getLoadConfigMock,
-  getOnHandler,
-  replySpy,
-  sendMessageSpy,
-  telegramBotDepsForTest,
-  telegramBotRuntimeForTest,
-} = harness;
-const { createTelegramBotCore: createTelegramBotBase, setTelegramBotRuntimeForTest } =
-  await import("./bot-core.js");
+const { getLoadConfigMock, getOnHandler, replySpy, sendMessageSpy, telegramBotDepsForTest } =
+  harness;
+const { createTelegramBotCore: createTelegramBotBase } = await import("./bot-core.js");
 const { MediaFetchError } = await import("./telegram-media.runtime.js");
 
 let createTelegramBot: (
@@ -139,13 +135,17 @@ function createChannelPostContext(params: {
 
 async function queueChannelPostAlbum(
   handler: (ctx: Record<string, unknown>) => Promise<void>,
-  params: { caption: string; mediaGroupId: string; photoFileIds: string[] },
+  params: {
+    baseMessageId: number;
+    caption: string;
+    mediaGroupId: string;
+    photoFileIds: string[];
+  },
 ) {
-  const baseMessageId = 600;
   const calls = params.photoFileIds.map((fileId, index) =>
     handler(
       createChannelPostContext({
-        messageId: baseMessageId + index,
+        messageId: params.baseMessageId + index,
         date: 1736380800 + index,
         ...(index === 0 ? { caption: params.caption } : {}),
         mediaGroupId: params.mediaGroupId,
@@ -154,7 +154,7 @@ async function queueChannelPostAlbum(
     ),
   );
   await Promise.all(calls);
-  return baseMessageId;
+  return params.baseMessageId;
 }
 
 function urlOf(args: unknown[]): string {
@@ -169,14 +169,13 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
   beforeAll(() => {
     createTelegramBot = (opts) =>
       createTelegramBotBase({
+        botInfo: telegramBotInfoForTest,
         ...opts,
         telegramDeps: telegramBotDepsForTest,
       });
-    setTelegramBotRuntimeForTest(telegramBotRuntimeForTest);
   });
 
   beforeEach(() => {
-    setTelegramBotRuntimeForTest(telegramBotRuntimeForTest);
     saveRemoteMedia.mockReset();
     saveMediaBuffer.mockReset();
     readRemoteMediaBuffer.mockReset();
@@ -199,6 +198,7 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
     try {
       const handler = getChannelPostHandler();
       const baseMessageId = await queueChannelPostAlbum(handler, {
+        baseMessageId: 600,
         caption: "album caption",
         mediaGroupId: "skip-warn-album-1",
         photoFileIds: ["p1", "p2"],
@@ -219,6 +219,11 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
       );
       const warningText = String(sendMessageSpy.mock.calls[0]?.[1]);
       expect(warningText).toContain("1 could not be fetched and was skipped");
+      await vi.waitFor(() => expect(replySpy).toHaveBeenCalled());
+      expect(replySpy.mock.calls[0]?.[0]?.media).toEqual([
+        expect.objectContaining({ path: "/tmp/p1.jpg", contentType: "image/png" }),
+        expect.objectContaining({ kind: "image" }),
+      ]);
     } finally {
       setTimeoutSpy.mockRestore();
     }
@@ -234,6 +239,7 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
     try {
       const handler = getChannelPostHandler();
       await queueChannelPostAlbum(handler, {
+        baseMessageId: 700,
         caption: "all-fail album",
         mediaGroupId: "skip-warn-album-2",
         photoFileIds: ["p1", "p2"],
@@ -244,6 +250,11 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
       const warningText = String(sendMessageSpy.mock.calls[0]?.[1]);
       expect(warningText).toContain("0 of 2 images");
       expect(warningText).toContain("2 could not be fetched and were skipped");
+      expect(replySpy.mock.calls[0]?.[0]?.media).toEqual([
+        expect.objectContaining({ kind: "image" }),
+        expect.objectContaining({ kind: "image" }),
+      ]);
+      expect(replySpy.mock.calls[0]?.[0]?.media?.every((fact) => !fact.path)).toBe(true);
     } finally {
       setTimeoutSpy.mockRestore();
     }
@@ -263,6 +274,7 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
     try {
       const handler = getChannelPostHandler();
       await queueChannelPostAlbum(handler, {
+        baseMessageId: 800,
         caption: "plural album",
         mediaGroupId: "skip-warn-album-3",
         photoFileIds: ["p1", "p2", "p3"],
@@ -273,6 +285,11 @@ describe("createTelegramBot media-group skip warning (#55216)", () => {
       const warningText = String(sendMessageSpy.mock.calls[0]?.[1]);
       expect(warningText).toContain("1 of 3 images");
       expect(warningText).toContain("2 could not be fetched and were skipped");
+      expect(replySpy.mock.calls[0]?.[0]?.media).toEqual([
+        expect.objectContaining({ path: "/tmp/p1.jpg", contentType: "image/png" }),
+        expect.objectContaining({ kind: "image" }),
+        expect.objectContaining({ kind: "image" }),
+      ]);
     } finally {
       setTimeoutSpy.mockRestore();
     }

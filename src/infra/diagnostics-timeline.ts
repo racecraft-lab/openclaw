@@ -1,3 +1,4 @@
+// Records structured diagnostics timeline events and spans.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -43,6 +44,7 @@ type DiagnosticsTimelineEvent = {
   provider?: string;
   operation?: string;
   ok?: boolean;
+  status?: number;
   command?: string;
   exitCode?: number | null;
   signal?: string | null;
@@ -62,7 +64,8 @@ type DiagnosticsTimelineOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-export type ActiveDiagnosticsTimelineSpan = {
+/** Active timeline span carried through async-local scope for nested diagnostics. */
+type ActiveDiagnosticsTimelineSpan = {
   name: string;
   phase?: string;
   spanId: string;
@@ -90,6 +93,7 @@ function resolveDiagnosticsTimelineOptions(
   };
 }
 
+/** Returns true when diagnostics flags and a JSONL output path both allow timeline writes. */
 export function isDiagnosticsTimelineEnabled(options: DiagnosticsTimelineOptions = {}): boolean {
   const { config, env } = resolveDiagnosticsTimelineOptions(options);
   return (
@@ -157,6 +161,7 @@ function serializeTimelineEvent(event: DiagnosticsTimelineEvent, env: NodeJS.Pro
     ...(event.provider ? { provider: event.provider } : {}),
     ...(event.operation ? { operation: event.operation } : {}),
     ...(typeof event.ok === "boolean" ? { ok: event.ok } : {}),
+    ...(typeof event.status === "number" ? { status: normalizeNumber(event.status) } : {}),
     ...(event.command ? { command: event.command } : {}),
     ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
     ...(event.signal !== undefined ? { signal: event.signal } : {}),
@@ -167,6 +172,7 @@ function serializeTimelineEvent(event: DiagnosticsTimelineEvent, env: NodeJS.Pro
   return `${JSON.stringify(normalized)}\n`;
 }
 
+/** Appends one normalized diagnostics timeline event to the configured JSONL file. */
 export function emitDiagnosticsTimelineEvent(
   event: DiagnosticsTimelineEvent,
   options: DiagnosticsTimelineOptions = {},
@@ -190,11 +196,48 @@ export function emitDiagnosticsTimelineEvent(
   } catch (error) {
     if (!warnedAboutTimelineWrite) {
       warnedAboutTimelineWrite = true;
-      process.stderr.write(`[diagnostics] failed to write timeline event: ${String(error)}\n`);
+      // Diagnostics output is best-effort; one warning avoids recursive stderr spam.
+      console.warn(`[diagnostics] failed to write timeline event: ${String(error)}`);
     }
   }
 }
 
+/** Replays a completed span after its activation config becomes available. */
+export function emitCompletedDiagnosticsTimelineSpan(
+  name: string,
+  durationMs: number,
+  options: DiagnosticsTimelineSpanOptions = {},
+): void {
+  if (!isDiagnosticsTimelineEnabled(options)) {
+    return;
+  }
+  const spanId = randomUUID();
+  emitDiagnosticsTimelineEvent(
+    {
+      type: "span.start",
+      name,
+      phase: options.phase,
+      spanId,
+      parentSpanId: options.parentSpanId,
+      attributes: options.attributes,
+    },
+    options,
+  );
+  emitDiagnosticsTimelineEvent(
+    {
+      type: "span.end",
+      name,
+      phase: options.phase,
+      spanId,
+      parentSpanId: options.parentSpanId,
+      durationMs,
+      attributes: options.attributes,
+    },
+    options,
+  );
+}
+
+/** Returns the currently active span so callers can preserve parentage across memoized work. */
 export function getActiveDiagnosticsTimelineSpan(): ActiveDiagnosticsTimelineSpan | undefined {
   return activeDiagnosticsTimelineSpan.getStore();
 }
@@ -285,6 +328,7 @@ function emitFailedDiagnosticsTimelineSpan(
   );
 }
 
+/** Measures async work as a start/end timeline span, emitting an error span before rethrowing. */
 export async function measureDiagnosticsTimelineSpan<T>(
   name: string,
   run: () => Promise<T> | T,
@@ -304,6 +348,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
   }
 }
 
+/** Measures sync work as a start/end timeline span, emitting an error span before rethrowing. */
 export function measureDiagnosticsTimelineSpanSync<T>(
   name: string,
   run: () => T,
@@ -321,8 +366,4 @@ export function measureDiagnosticsTimelineSpanSync<T>(
     emitFailedDiagnosticsTimelineSpan(span, error);
     throw error;
   }
-}
-
-export async function flushDiagnosticsTimelineForTest(): Promise<void> {
-  await Promise.resolve();
 }

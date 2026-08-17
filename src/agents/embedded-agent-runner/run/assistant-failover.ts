@@ -1,6 +1,13 @@
+/**
+ * Handles assistant-stage failover decisions during embedded-agent attempts.
+ */
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { AssistantMessage } from "../../../llm/types.js";
+import {
+  projectAgentRunAttemptTerminal,
+  type AgentRunAttemptTerminal,
+} from "../../agent-run-terminal-outcome.js";
 import type { AuthProfileFailureReason } from "../../auth-profiles.js";
 import {
   formatAssistantErrorText,
@@ -9,6 +16,8 @@ import {
   type FailoverReason,
 } from "../../embedded-agent-helpers.js";
 import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
+import type { PreparedProviderFailoverOwner } from "../../failover/provider-patterns.js";
+import { classifyRateLimitWindow } from "../../failover/retry-evidence.js";
 import {
   mergeRetryFailoverReason,
   resolveRunFailoverDecision,
@@ -24,30 +33,52 @@ type AssistantFailoverOutcome =
       action: "retry";
       overloadProfileRotations: number;
       lastRetryFailoverReason: FailoverReason | null;
-      retryKind?: "same_model_idle_timeout";
+      retryKind: "profile_rotation" | "same_model_idle_timeout" | "same_model_rate_limit";
     }
   | {
       action: "throw";
       overloadProfileRotations: number;
       error: FailoverError;
     };
+type ShortWindowRateLimitRetry = {
+  retryAfterSeconds?: number;
+};
 
+function resolveShortWindowRateLimitRetry(
+  message: string | undefined,
+): ShortWindowRateLimitRetry | null {
+  const window = classifyRateLimitWindow(message);
+  if (window.kind !== "short") {
+    return null;
+  }
+  return window.retryAfterSeconds === undefined
+    ? {}
+    : { retryAfterSeconds: window.retryAfterSeconds };
+}
+
+export function isShortWindowRateLimitMessage(message: string | undefined): boolean {
+  return resolveShortWindowRateLimitRetry(message) !== null;
+}
+
+/**
+ * Applies an assistant-stage failover decision and returns the next run action.
+ * It owns auth-profile rotation, overload/rate-limit escalation, same-model
+ * idle-timeout retry, and FailoverError construction for outer model fallback.
+ */
 export async function handleAssistantFailover(params: {
   initialDecision: AssistantFailoverDecision;
-  aborted: boolean;
-  externalAbort: boolean;
+  terminal: AgentRunAttemptTerminal;
+  signalOwnedInterruption: boolean;
   fallbackConfigured: boolean;
   failoverFailure: boolean;
   failoverReason: FailoverReason | null;
-  timedOut: boolean;
-  idleTimedOut: boolean;
-  timedOutDuringCompaction: boolean;
-  timedOutDuringToolExecution: boolean;
+  harnessOwnsTransport: boolean;
   allowSameModelIdleTimeoutRetry: boolean;
   assistantProfileFailureReason: AuthProfileFailureReason | null;
   lastProfileId?: string;
   modelId: string;
   provider: string;
+  providerOwner?: PreparedProviderFailoverOwner;
   activeErrorContext: { provider: string; model: string };
   lastAssistant: AssistantMessage | undefined;
   config: OpenClawConfig | undefined;
@@ -55,6 +86,8 @@ export async function handleAssistantFailover(params: {
   authFailure: boolean;
   rateLimitFailure: boolean;
   billingFailure: boolean;
+  /** Credential auth mode (e.g. "oauth", "token", "api_key") for billing copy (#80877). */
+  authMode?: string;
   cloudCodeAssistFormatError: boolean;
   isProbeSession: boolean;
   overloadProfileRotations: number;
@@ -70,14 +103,17 @@ export async function handleAssistantFailover(params: {
     reason?: AuthProfileFailureReason | null;
     modelId?: string;
   }) => Promise<void>;
-  maybeEscalateRateLimitProfileFallback: (params: {
+  maybeRetrySameModelRateLimit: (retry?: ShortWindowRateLimitRetry) => Promise<boolean>;
+  maybeBackoffBeforeOverloadFailover: (reason: FailoverReason | null) => Promise<void>;
+  advanceAuthProfile: () => Promise<boolean>;
+  advanceRateLimitAuthProfile: (context: {
     failoverProvider: string;
     failoverModel: string;
     logFallbackDecision: (decision: "fallback_model", extra?: { status?: number }) => void;
-  }) => void;
-  maybeBackoffBeforeOverloadFailover: (reason: FailoverReason | null) => Promise<void>;
-  advanceAuthProfile: () => Promise<boolean>;
+  }) => Promise<boolean>;
 }): Promise<AssistantFailoverOutcome> {
+  const terminal = projectAgentRunAttemptTerminal(params.terminal);
+  const externalAbort = terminal.externalAbort || params.signalOwnedInterruption;
   let overloadProfileRotations = params.overloadProfileRotations;
   let decision = params.initialDecision;
   const sameModelIdleTimeoutRetry = (): AssistantFailoverOutcome => {
@@ -95,13 +131,23 @@ export async function handleAssistantFailover(params: {
       }),
     };
   };
+  const sameModelRateLimitRetry = (): AssistantFailoverOutcome => ({
+    action: "retry",
+    overloadProfileRotations,
+    retryKind: "same_model_rate_limit",
+    lastRetryFailoverReason: mergeRetryFailoverReason({
+      previous: params.previousRetryFailoverReason,
+      failoverReason: params.failoverReason,
+      timedOut: terminal.timedOut,
+    }),
+  });
 
   if (decision.action === "rotate_profile") {
     const failedProfileId = params.lastProfileId;
-    const timeoutFailure = params.timedOut || params.idleTimedOut;
+    const timeoutFailure = terminal.timedOut;
     const failureReason = params.assistantProfileFailureReason;
     const markFailedProfile = async () => {
-      if (!failedProfileId || !failureReason) {
+      if (!failureReason) {
         return;
       }
       try {
@@ -145,19 +191,35 @@ export async function handleAssistantFailover(params: {
       }
     }
 
+    let rotated: boolean;
     if (params.failoverReason === "rate_limit") {
-      params.maybeEscalateRateLimitProfileFallback({
+      // Minute-scale RPM windows can clear without spending a profile rotation
+      // or model fallback. Keep the retry bounded; once exhausted, continue
+      // through the existing rate-limit escalation path.
+      const shortWindowRetry = resolveShortWindowRateLimitRetry(params.lastAssistant?.errorMessage);
+      if (shortWindowRetry && (await params.maybeRetrySameModelRateLimit(shortWindowRetry))) {
+        return sameModelRateLimitRetry();
+      }
+      rotated = await params.advanceRateLimitAuthProfile({
         failoverProvider: params.activeErrorContext.provider,
         failoverModel: params.activeErrorContext.model,
         logFallbackDecision: params.logAssistantFailoverDecision,
       });
+    } else {
+      rotated = await params.advanceAuthProfile();
     }
 
-    const rotated = await params.advanceAuthProfile();
     const markFailedProfilePromise = markFailedProfile();
     if (timeoutFailure && !params.isProbeSession && failedProfileId) {
-      const timeoutLabel = params.idleTimedOut ? "idle timeout (model silent)" : "timed out";
-      params.warn(`Profile ${failedProfileId} ${timeoutLabel}. Trying next account...`);
+      const timeoutLabel = terminal.idleTimedOut ? "idle timeout (model silent)" : "timed out";
+      // Only promise a next account when one was actually selected. Credentials
+      // that config does not authorize are not rotation targets, so this can end
+      // with no further account even when one exists in the environment.
+      params.warn(
+        rotated
+          ? `Profile ${failedProfileId} ${timeoutLabel}. Trying next account...`
+          : `Profile ${failedProfileId} ${timeoutLabel}. No further authorized account for this provider; create a backup auth profile and add its id to auth.order to enable failover.`,
+      );
     }
     if (params.cloudCodeAssistFormatError && failedProfileId) {
       params.warn(
@@ -165,41 +227,43 @@ export async function handleAssistantFailover(params: {
       );
     }
     if (rotated) {
+      // Marking the failed profile is non-blocking after rotation succeeds; the
+      // retry can proceed with the next profile while the failure record settles.
       void markFailedProfilePromise;
       params.logAssistantFailoverDecision("rotate_profile");
       await params.maybeBackoffBeforeOverloadFailover(params.failoverReason);
       return {
         action: "retry",
         overloadProfileRotations,
+        retryKind: "profile_rotation",
         lastRetryFailoverReason: mergeRetryFailoverReason({
           previous: params.previousRetryFailoverReason,
           failoverReason: params.failoverReason,
-          timedOut: params.timedOut || params.idleTimedOut,
+          timedOut: terminal.timedOut,
         }),
       };
     }
     await markFailedProfilePromise;
-    if (params.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
+    if (terminal.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
       return sameModelIdleTimeoutRetry();
     }
 
     decision = resolveRunFailoverDecision({
       stage: "assistant",
       allowFormatRetry: params.cloudCodeAssistFormatError,
-      aborted: params.aborted,
-      externalAbort: params.externalAbort,
+      terminal: params.terminal,
+      signalOwnedInterruption: params.signalOwnedInterruption,
       fallbackConfigured: params.fallbackConfigured,
       failoverFailure: params.failoverFailure,
       failoverReason: params.failoverReason,
-      timedOut: params.timedOut,
-      idleTimedOut: params.idleTimedOut,
-      timedOutDuringCompaction: params.timedOutDuringCompaction,
-      timedOutDuringToolExecution: params.timedOutDuringToolExecution,
+      harnessOwnsTransport: params.harnessOwnsTransport,
       profileRotated: true,
     });
   }
 
   if (decision.action === "fallback_model") {
+    // Backoff runs before throwing so the outer fallback model starts after the
+    // provider-specific overload delay.
     await params.maybeBackoffBeforeOverloadFailover(params.failoverReason);
     const message = resolveAssistantFailoverErrorMessage(params);
     const status =
@@ -217,6 +281,7 @@ export async function handleAssistantFailover(params: {
         provider: params.activeErrorContext.provider,
         model: params.activeErrorContext.model,
         profileId: params.lastProfileId,
+        authMode: params.authMode,
         status,
         rawError: params.lastAssistant?.errorMessage?.trim(),
         suspend: shouldSuspend,
@@ -225,14 +290,14 @@ export async function handleAssistantFailover(params: {
   }
 
   if (decision.action === "surface_error") {
-    if (!params.externalAbort && params.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
+    if (!externalAbort && terminal.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
       return sameModelIdleTimeoutRetry();
     }
     params.logAssistantFailoverDecision("surface_error");
     // Only current provider failures throw here. External aborts, timeout
     // payload synthesis, and stale classified text without failoverFailure
     // keep the normal payload path.
-    if (!params.externalAbort && !params.timedOut && params.failoverFailure) {
+    if (!externalAbort && !terminal.timedOut && params.failoverFailure) {
       const message = resolveAssistantFailoverErrorMessage(params);
       const reason = resolveSurfaceErrorReason(decision.reason, params);
       const status =
@@ -248,6 +313,7 @@ export async function handleAssistantFailover(params: {
           provider: params.activeErrorContext.provider,
           model: params.activeErrorContext.model,
           profileId: params.lastProfileId,
+          authMode: params.authMode,
           status,
           rawError: params.lastAssistant?.errorMessage?.trim(),
           suspend: shouldSuspend,
@@ -267,20 +333,25 @@ function resolveAssistantFailoverErrorMessage(params: {
   config: OpenClawConfig | undefined;
   sessionKey?: string;
   activeErrorContext: { provider: string; model: string };
-  timedOut: boolean;
-  idleTimedOut: boolean;
+  providerOwner?: PreparedProviderFailoverOwner;
+  terminal: AgentRunAttemptTerminal;
   rateLimitFailure: boolean;
   billingFailure: boolean;
   authFailure: boolean;
+  /** Credential auth mode passed through to billing copy formatter (#80877). */
+  authMode?: string;
 }): string {
-  const timeoutFailure = params.timedOut || params.idleTimedOut;
+  const timeoutFailure =
+    params.terminal.kind === "timeout" && params.terminal.source !== "observation";
   return (
     (params.lastAssistant
       ? formatAssistantErrorText(params.lastAssistant, {
           cfg: params.config,
           sessionKey: params.sessionKey,
           provider: params.activeErrorContext.provider,
+          providerOwner: params.providerOwner,
           model: params.activeErrorContext.model,
+          authMode: params.authMode,
         })
       : undefined) ||
     params.lastAssistant?.errorMessage?.trim() ||
@@ -292,6 +363,7 @@ function resolveAssistantFailoverErrorMessage(params: {
           ? formatBillingErrorMessage(
               params.activeErrorContext.provider,
               params.activeErrorContext.model,
+              params.authMode,
             )
           : params.authFailure
             ? "LLM request unauthorized."

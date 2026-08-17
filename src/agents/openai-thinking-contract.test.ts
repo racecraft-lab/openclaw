@@ -1,3 +1,4 @@
+// Verifies session thinking levels reach OpenAI and Codex Responses transports.
 import { Agent, type StreamFn } from "openclaw/plugin-sdk/agent-core";
 import {
   createAssistantMessageEventStream,
@@ -119,6 +120,7 @@ function createCapturingStreamFn(
   model: ResponsesModel,
   capturedOptions: SimpleStreamOptions[],
 ): StreamFn {
+  // Captures Agent -> stream options while returning a complete assistant event.
   return (_model, _context, options) => {
     capturedOptions.push({ ...options });
     const stream = createAssistantMessageEventStream();
@@ -164,11 +166,11 @@ async function captureProviderPayload<
   ) => ReturnType<StreamFn>;
   options: SimpleStreamOptions;
 }): Promise<Record<string, unknown>> {
+  // Stop at onPayload so transport serialization can be asserted without HTTP.
   const payloadPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error(`provider payload callback was not invoked for ${params.model.api}`)),
-      1_000,
-    );
+    let payloadCaptured = false;
+    const abortController = new AbortController();
+    abortController.abort(new Error("payload capture must not reach provider egress"));
     const stream = params.streamFn(
       params.model,
       {
@@ -178,14 +180,24 @@ async function captureProviderPayload<
         apiKey: params.model.api === "openai-chatgpt-responses" ? codexTestToken : "test-api-key",
         cacheRetention: "none",
         ...params.options,
+        signal: abortController.signal,
         onPayload: (payload) => {
-          clearTimeout(timeout);
+          payloadCaptured = true;
           resolve(structuredClone(payload as Record<string, unknown>));
           throw new Error("stop after payload capture");
         },
       },
     );
-    void Promise.resolve(stream).then((resolvedStream) => resolvedStream.result());
+    void Promise.resolve(stream).then(async (resolvedStream) => {
+      const result = await resolvedStream.result();
+      if (!payloadCaptured) {
+        reject(
+          new Error(
+            `provider payload callback was not invoked for ${params.model.api}; stream ended with ${result.stopReason}: ${result.errorMessage ?? "no error"}`,
+          ),
+        );
+      }
+    }, reject);
   });
 
   return payloadPromise;

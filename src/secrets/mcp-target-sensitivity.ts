@@ -1,6 +1,5 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { resolveSecretInputRef } from "../config/types.secrets.js";
-import { isNonEmptyString } from "./shared.js";
+import { isSecretRef } from "../config/types.secrets.js";
 
 const ALWAYS_SENSITIVE_MCP_HEADER_NAMES = new Set([
   "authorization",
@@ -17,39 +16,8 @@ const ALWAYS_SENSITIVE_MCP_HEADER_NAMES = new Set([
   "cookie",
   "cookie2",
 ]);
-const SENSITIVE_MCP_HEADER_NAME_FRAGMENTS = [
-  "api-key",
-  "apikey",
-  "auth",
-  "token",
-  "secret",
-  "password",
-  "credential",
-  "session",
-];
-const SENSITIVE_MCP_HEADER_NAME_SEGMENTS = new Set([
-  "api",
-  "auth",
-  "token",
-  "secret",
-  "password",
-  "credential",
-  "session",
-  "key",
-]);
-const SENSITIVE_MCP_ENV_NAME_FRAGMENTS = [
-  "api_key",
-  "apikey",
-  "auth",
-  "token",
-  "secret",
-  "password",
-  "passphrase",
-  "credential",
-  "private_key",
-  "privatekey",
-];
-const SENSITIVE_MCP_ENV_NAME_SEGMENTS = new Set([
+
+const SENSITIVE_MCP_NAME_SEGMENTS = new Set([
   "api",
   "auth",
   "token",
@@ -57,9 +25,20 @@ const SENSITIVE_MCP_ENV_NAME_SEGMENTS = new Set([
   "password",
   "passphrase",
   "credential",
+  "session",
   "private",
   "key",
 ]);
+const SENSITIVE_MCP_NAME_FRAGMENTS = [
+  "apikey",
+  "auth",
+  "token",
+  "secret",
+  "password",
+  "passphrase",
+  "credential",
+  "privatekey",
+];
 
 const BENIGN_MCP_LITERAL_VALUES = new Set([
   "0",
@@ -103,17 +82,45 @@ const SENSITIVE_MCP_VALUE_FRAGMENTS = [
 function getNormalizedMcpLiteralValue(
   value: unknown,
 ): { trimmed: string; normalized: string } | undefined {
-  if (!isNonEmptyString(value)) {
-    return undefined;
-  }
-  const trimmed = value.trim();
+  const stringValue =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? String(value)
+        : undefined;
+  const trimmed = stringValue?.trim();
   if (!trimmed) {
     return undefined;
   }
-  return {
-    trimmed,
-    normalized: normalizeLowercaseStringOrEmpty(trimmed),
-  };
+  return { trimmed, normalized: normalizeLowercaseStringOrEmpty(trimmed) };
+}
+
+function tokenizeMcpName(value: string): string[] {
+  return normalizeLowercaseStringOrEmpty(value)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function hasSensitiveMcpUrlValue(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password) {
+    return true;
+  }
+  for (const [key, paramValue] of parsed.searchParams.entries()) {
+    if (isLikelySensitiveMcpName(key)) {
+      return true;
+    }
+    const normalizedValue = normalizeLowercaseStringOrEmpty(paramValue);
+    if (SENSITIVE_MCP_VALUE_FRAGMENTS.some((fragment) => normalizedValue.includes(fragment))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isBenignMcpLiteralValue(value: unknown): boolean {
@@ -128,37 +135,7 @@ function isBenignMcpLiteralValue(value: unknown): boolean {
   );
 }
 
-function hasSensitiveMcpUrlValue(value: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (parsed.username || parsed.password) {
-    return true;
-  }
-  for (const [key, paramValue] of parsed.searchParams.entries()) {
-    if (isLikelySensitiveMcpEnvName(key) || isLikelySensitiveMcpHeaderName(key)) {
-      return true;
-    }
-    const normalizedValue = normalizeLowercaseStringOrEmpty(paramValue);
-    if (SENSITIVE_MCP_VALUE_FRAGMENTS.some((fragment) => normalizedValue.includes(fragment))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function tokenizeMcpName(value: string): string[] {
-  const normalized = normalizeLowercaseStringOrEmpty(value);
-  if (!normalized) {
-    return [];
-  }
-  return normalized.split(/[^a-z0-9]+/).filter(Boolean);
-}
-
-export function isLikelySensitiveMcpHeaderName(value: string): boolean {
+export function isLikelySensitiveMcpName(value: string): boolean {
   const normalized = normalizeLowercaseStringOrEmpty(value);
   if (!normalized) {
     return false;
@@ -166,80 +143,27 @@ export function isLikelySensitiveMcpHeaderName(value: string): boolean {
   if (ALWAYS_SENSITIVE_MCP_HEADER_NAMES.has(normalized)) {
     return true;
   }
-  if (SENSITIVE_MCP_HEADER_NAME_FRAGMENTS.some((fragment) => normalized.includes(fragment))) {
-    return true;
-  }
-  return tokenizeMcpName(normalized).some((segment) =>
-    SENSITIVE_MCP_HEADER_NAME_SEGMENTS.has(segment),
+  return (
+    SENSITIVE_MCP_NAME_FRAGMENTS.some((fragment) => normalized.includes(fragment)) ||
+    tokenizeMcpName(normalized).some((segment) => SENSITIVE_MCP_NAME_SEGMENTS.has(segment))
   );
 }
 
-export function isLikelySensitiveMcpEnvName(value: string): boolean {
-  const normalized = normalizeLowercaseStringOrEmpty(value);
-  if (!normalized) {
-    return false;
-  }
-  if (SENSITIVE_MCP_ENV_NAME_FRAGMENTS.some((fragment) => normalized.includes(fragment))) {
-    return true;
-  }
-  return tokenizeMcpName(normalized).some((segment) =>
-    SENSITIVE_MCP_ENV_NAME_SEGMENTS.has(segment),
-  );
-}
-
-export function shouldAuditPlaintextMcpValue(params: {
-  kind: "env" | "header";
-  name: string;
-  value: unknown;
-}): boolean {
+export function shouldAuditPlaintextMcpValue(params: { name: string; value: unknown }): boolean {
   const literal = getNormalizedMcpLiteralValue(params.value);
-  if (!literal) {
-    return false;
-  }
-  if (isBenignMcpLiteralValue(params.value)) {
-    return false;
-  }
-  const nameLooksSensitive =
-    params.kind === "env"
-      ? isLikelySensitiveMcpEnvName(params.name)
-      : isLikelySensitiveMcpHeaderName(params.name);
-  if (nameLooksSensitive) {
-    return true;
-  }
-  if (hasSensitiveMcpUrlValue(literal.trimmed)) {
-    return true;
-  }
-  return SENSITIVE_MCP_VALUE_FRAGMENTS.some((fragment) => literal.normalized.includes(fragment));
-}
-
-export function shouldIncludeConfigureMcpCandidate(params: {
-  kind: "env" | "header";
-  name: string;
-  value: unknown;
-  refValue?: unknown;
-}): boolean {
-  const hasConfiguredRef = Boolean(
-    resolveSecretInputRef({
-      value: params.value,
-      refValue: params.refValue,
-    }).ref,
-  );
-  if (hasConfiguredRef) {
-    return true;
-  }
-  const literal = getNormalizedMcpLiteralValue(params.value);
-  const nameLooksSensitive =
-    params.kind === "env"
-      ? isLikelySensitiveMcpEnvName(params.name)
-      : isLikelySensitiveMcpHeaderName(params.name);
   if (!literal || isBenignMcpLiteralValue(params.value)) {
     return false;
   }
-  if (nameLooksSensitive) {
-    return true;
-  }
-  if (hasSensitiveMcpUrlValue(literal.trimmed)) {
-    return true;
-  }
-  return SENSITIVE_MCP_VALUE_FRAGMENTS.some((fragment) => literal.normalized.includes(fragment));
+  return (
+    isLikelySensitiveMcpName(params.name) ||
+    hasSensitiveMcpUrlValue(literal.trimmed) ||
+    SENSITIVE_MCP_VALUE_FRAGMENTS.some((fragment) => literal.normalized.includes(fragment))
+  );
+}
+
+export function shouldIncludeConfigureMcpCandidate(params: {
+  name: string;
+  value: unknown;
+}): boolean {
+  return isSecretRef(params.value) || shouldAuditPlaintextMcpValue(params);
 }

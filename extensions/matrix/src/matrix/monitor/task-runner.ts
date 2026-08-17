@@ -1,3 +1,4 @@
+// Matrix plugin module implements task runner behavior.
 import type { RuntimeLogger } from "../../runtime-api.js";
 
 export function createMatrixMonitorTaskRunner(params: {
@@ -5,8 +6,12 @@ export function createMatrixMonitorTaskRunner(params: {
   logVerboseMessage: (message: string) => void;
 }) {
   const inFlight = new Set<Promise<void>>();
+  let closed = false;
 
   const runDetachedTask = (label: string, task: () => Promise<void>): Promise<void> => {
+    if (closed) {
+      return Promise.resolve();
+    }
     const trackedTask: Promise<void> = Promise.resolve()
       .then(task)
       .catch((error: unknown) => {
@@ -31,6 +36,7 @@ export function createMatrixMonitorTaskRunner(params: {
   };
 
   return {
+    close: () => (closed = true),
     runDetachedTask,
     waitForIdle,
   };

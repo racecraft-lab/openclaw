@@ -1,7 +1,10 @@
+// Prunes omitted bundled plugin files and their unshared runtime dependencies
+// from Docker-oriented production package output.
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectRootPackageExcludedExtensionDirs } from "./lib/bundled-plugin-build-entries.mjs";
+import { assertRealOutputRoot } from "./lib/output-root-guard.mjs";
 import { removePathIfExists } from "./runtime-postbuild-shared.mjs";
 
 const RUNTIME_DEPENDENCY_FIELDS = ["dependencies", "optionalDependencies"];
@@ -18,6 +21,9 @@ function parsePluginList(value) {
   );
 }
 
+/**
+ * Parses OPENCLAW_EXTENSIONS into the bundled plugin ids that Docker should keep.
+ */
 export function parseDockerPluginKeepList(value) {
   return parsePluginList(value);
 }
@@ -29,10 +35,16 @@ function readPackageJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-function collectRuntimeDependencyNames(packageJson) {
+function collectRuntimeDependencyNames(packageJson, options = {}) {
   const dependencies = new Set();
   for (const field of RUNTIME_DEPENDENCY_FIELDS) {
     for (const dependencyName of Object.keys(packageJson?.[field] ?? {})) {
+      dependencies.add(dependencyName);
+    }
+  }
+  for (const dependencyName of Object.keys(packageJson?.peerDependencies ?? {})) {
+    const optional = packageJson?.peerDependenciesMeta?.[dependencyName]?.optional === true;
+    if (options.includeOptionalPeers === true || !optional) {
       dependencies.add(dependencyName);
     }
   }
@@ -56,7 +68,7 @@ function removeEmptyScopeDir(repoRoot, packageName) {
   }
 }
 
-function collectPackageRuntimeClosure(repoRoot, seedPackageNames) {
+function collectPackageRuntimeClosure(repoRoot, seedPackageNames, options = {}) {
   const seen = new Set();
   const stack = [...seedPackageNames];
 
@@ -67,8 +79,10 @@ function collectPackageRuntimeClosure(repoRoot, seedPackageNames) {
     }
     seen.add(packageName);
 
-    const packageJson = readPackageJson(path.join(nodeModulePath(repoRoot, packageName), "package.json"));
-    for (const dependencyName of collectRuntimeDependencyNames(packageJson)) {
+    const packageJson = readPackageJson(
+      path.join(nodeModulePath(repoRoot, packageName), "package.json"),
+    );
+    for (const dependencyName of collectRuntimeDependencyNames(packageJson, options)) {
       if (!seen.has(dependencyName)) {
         stack.push(dependencyName);
       }
@@ -106,7 +120,9 @@ function pruneNodeModulesForOmittedPlugins(repoRoot, bundledPluginDir, omittedPl
   const omittedSeeds = new Set();
 
   for (const pluginId of omittedPluginIds) {
-    const packageJson = readPackageJson(path.join(repoRoot, bundledPluginDir, pluginId, "package.json"));
+    const packageJson = readPackageJson(
+      path.join(repoRoot, bundledPluginDir, pluginId, "package.json"),
+    );
     if (typeof packageJson?.name === "string") {
       omittedPackageNames.add(packageJson.name);
     }
@@ -116,7 +132,11 @@ function pruneNodeModulesForOmittedPlugins(repoRoot, bundledPluginDir, omittedPl
   }
 
   const keptSeeds = new Set(collectRuntimeDependencyNames(rootPackageJson));
-  for (const dependencyName of collectWorkspacePackageRuntimeSeeds(repoRoot, "packages", new Set())) {
+  for (const dependencyName of collectWorkspacePackageRuntimeSeeds(
+    repoRoot,
+    "packages",
+    new Set(),
+  )) {
     keptSeeds.add(dependencyName);
   }
   for (const dependencyName of collectWorkspacePackageRuntimeSeeds(
@@ -128,7 +148,12 @@ function pruneNodeModulesForOmittedPlugins(repoRoot, bundledPluginDir, omittedPl
   }
 
   const keptClosure = collectPackageRuntimeClosure(repoRoot, keptSeeds);
-  const omittedClosure = collectPackageRuntimeClosure(repoRoot, omittedSeeds);
+  // Hoisted workspace dev dependencies can satisfy optional peers of omitted
+  // plugins. Treat those installed peer-only branches as removal candidates;
+  // the kept runtime closure below remains authoritative.
+  const omittedClosure = collectPackageRuntimeClosure(repoRoot, omittedSeeds, {
+    includeOptionalPeers: true,
+  });
   const removed = [];
   const removalCandidates = new Set([...omittedPackageNames, ...omittedClosure]);
 
@@ -150,18 +175,30 @@ function pruneNodeModulesForOmittedPlugins(repoRoot, bundledPluginDir, omittedPl
   return removed;
 }
 
+/**
+ * Removes omitted plugin dist trees plus node_modules packages not needed by kept runtime code.
+ */
 export function pruneDockerPluginDist(params = {}) {
   const repoRoot = params.cwd ?? params.repoRoot ?? process.cwd();
   const env = params.env ?? process.env;
   const bundledPluginDir = env.OPENCLAW_BUNDLED_PLUGIN_DIR ?? "extensions";
   const keepPluginIds = parseDockerPluginKeepList(env.OPENCLAW_EXTENSIONS);
   const excludedPluginIds = collectRootPackageExcludedExtensionDirs({ cwd: repoRoot });
-  const omittedPluginIds = new Set([...excludedPluginIds].filter((pluginId) => !keepPluginIds.has(pluginId)));
+  const omittedPluginIds = new Set(
+    [...excludedPluginIds].filter((pluginId) => !keepPluginIds.has(pluginId)),
+  );
   const removed = [];
+
+  // The removals below recurse into dist/ and dist-runtime/ plugin trees;
+  // refuse to follow a symlinked output root into its target.
+  assertRealOutputRoot(path.join(repoRoot, "dist"));
+  assertRealOutputRoot(path.join(repoRoot, "dist-runtime"));
 
   removed.push(...pruneNodeModulesForOmittedPlugins(repoRoot, bundledPluginDir, omittedPluginIds));
 
-  for (const pluginId of [...omittedPluginIds].toSorted((left, right) => left.localeCompare(right))) {
+  for (const pluginId of [...omittedPluginIds].toSorted((left, right) =>
+    left.localeCompare(right),
+  )) {
     for (const pluginPath of [
       path.join(bundledPluginDir, pluginId),
       path.join("dist", "extensions", pluginId),

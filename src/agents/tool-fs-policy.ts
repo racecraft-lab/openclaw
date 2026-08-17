@@ -1,3 +1,8 @@
+/**
+ * Tool filesystem policy resolver.
+ *
+ * Combines global and agent fs/tool policy into workspace-only and root-expansion decisions.
+ */
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { pickSandboxToolPolicy } from "./sandbox-tool-policy.js";
@@ -5,11 +10,16 @@ import type { ToolFsPolicy } from "./tool-fs-policy.types.js";
 import { isToolAllowedByPolicies } from "./tool-policy-match.js";
 import { mergeAlsoAllowPolicy, resolveToolProfilePolicy } from "./tool-policy.js";
 
-export type { ToolFsPolicy } from "./tool-fs-policy.types.js";
+export type { PreparedSessionPermissionPolicy, ToolFsPolicy } from "./tool-fs-policy.types.js";
+export { resolveSessionPermissionExecMode } from "./session-permission-exec-mode.js";
 
-export function createToolFsPolicy(params: { workspaceOnly?: boolean }): ToolFsPolicy {
+export function createToolFsPolicy(params: {
+  workspaceOnly?: boolean;
+  root?: string;
+}): ToolFsPolicy {
   return {
     workspaceOnly: params.workspaceOnly === true,
+    ...(params.root ? { root: params.root } : {}),
   };
 }
 

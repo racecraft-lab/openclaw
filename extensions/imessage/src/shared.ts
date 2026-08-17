@@ -1,3 +1,4 @@
+// Imessage plugin module implements shared behavior.
 import { describeAccountSnapshot } from "openclaw/plugin-sdk/account-helpers";
 import {
   adaptScopedAccountAccessor,
@@ -52,12 +53,13 @@ export const imessageSecurityAdapter =
     groupPolicyPath: "channels.imessage.groupPolicy",
     groupAllowFromPath: "channels.imessage.groupAllowFrom",
     mentionGated: false,
+    findingTitle: "iMessage security warning",
     policyPathSuffix: "dmPolicy",
   });
 
 export function createIMessagePluginBase(params: {
   setupWizard?: NonNullable<ChannelPlugin<ResolvedIMessageAccount>["setupWizard"]>;
-  setup: NonNullable<ChannelPlugin<ResolvedIMessageAccount>["setup"]>;
+  setupContract: NonNullable<ChannelPlugin<ResolvedIMessageAccount>["setupContract"]>;
 }): Pick<
   ChannelPlugin<ResolvedIMessageAccount>,
   | "id"
@@ -68,7 +70,7 @@ export function createIMessagePluginBase(params: {
   | "configSchema"
   | "config"
   | "security"
-  | "setup"
+  | "setupContract"
   | "messaging"
 > {
   const base = createChannelPluginBase({
@@ -76,12 +78,19 @@ export function createIMessagePluginBase(params: {
     meta: {
       ...getChatChannelMeta(IMESSAGE_CHANNEL),
       aliases: ["imsg"],
-      showConfigured: false,
+      exposure: { configured: false },
     },
     setupWizard: params.setupWizard,
     capabilities: {
       chatTypes: ["direct", "group"],
       media: true,
+      tts: {
+        voice: {
+          synthesisTarget: "audio-file",
+          audioFileFormats: ["mp3", "caf", "audio/mpeg", "audio/x-caf"],
+          preferAudioFileFormat: "caf",
+        },
+      },
       reactions: true,
       edit: true,
       unsend: true,
@@ -101,7 +110,7 @@ export function createIMessagePluginBase(params: {
         }),
     },
     security: imessageSecurityAdapter,
-    setup: params.setup,
+    setupContract: params.setupContract,
   });
   return {
     ...base,
@@ -124,7 +133,7 @@ export function createIMessagePluginBase(params: {
     | "configSchema"
     | "config"
     | "security"
-    | "setup"
+    | "setupContract"
     | "messaging"
   >;
 }

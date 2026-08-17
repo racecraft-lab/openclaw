@@ -1,3 +1,4 @@
+// Generic node.invoke command with shell-exec commands intentionally blocked.
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
@@ -7,15 +8,24 @@ import { randomIdempotencyKey } from "../../gateway/call.js";
 import { defaultRuntime } from "../../runtime.js";
 import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
 import {
-  callGatewayCli,
+  callNodesGatewayCli,
   nodesCallOpts,
   parseOptionalNodePositiveInteger,
-  resolveNodeId,
+  resolveCliNodeId,
 } from "./rpc.js";
 import type { NodesRpcOpts } from "./types.js";
 
 const BLOCKED_NODE_INVOKE_COMMANDS = new Set(["system.run", "system.run.prepare"]);
 
+function parseNodeInvokeParams(value = "{}"): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new Error("--params must be valid JSON.");
+  }
+}
+
+/** Register direct node command invocation. */
 export function registerNodesInvokeCommands(nodes: Command) {
   nodesCallOpts(
     nodes
@@ -28,9 +38,9 @@ export function registerNodesInvokeCommands(nodes: Command) {
       .option("--idempotency-key <key>", "Idempotency key (optional)")
       .action(async (opts: NodesRpcOpts) => {
         await runNodesCommand("invoke", async () => {
-          const nodeId = await resolveNodeId(opts, normalizeOptionalString(opts.node) ?? "");
+          const nodeQuery = normalizeOptionalString(opts.node) ?? "";
           const command = normalizeOptionalString(opts.command) ?? "";
-          if (!nodeId || !command) {
+          if (!nodeQuery || !command) {
             const { error } = getNodesTheme();
             defaultRuntime.error(error("--node and --command required"));
             defaultRuntime.exit(1);
@@ -41,7 +51,8 @@ export function registerNodesInvokeCommands(nodes: Command) {
               `command "${command}" is reserved for shell execution; use the exec tool with host=node instead`,
             );
           }
-          const params = JSON.parse(opts.params ?? "{}") as unknown;
+          const params = parseNodeInvokeParams(opts.params);
+          const nodeId = await resolveCliNodeId(opts, nodeQuery);
           const timeoutMs = parseOptionalNodePositiveInteger(
             opts.invokeTimeout,
             "--invoke-timeout",
@@ -57,7 +68,7 @@ export function registerNodesInvokeCommands(nodes: Command) {
             invokeParams.timeoutMs = timeoutMs;
           }
 
-          const result = await callGatewayCli("node.invoke", opts, invokeParams);
+          const result = await callNodesGatewayCli("node.invoke", opts, invokeParams);
           defaultRuntime.writeJson(result);
         });
       }),

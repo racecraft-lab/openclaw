@@ -1,5 +1,6 @@
-import { createStartAccountContext } from "openclaw/plugin-sdk/channel-test-helpers";
+// Nextcloud Talk tests cover channel.lifecycle plugin behavior.
 import {
+  createStartAccountContext,
   expectStopPendingUntilAbort,
   startAccountAndTrackLifecycle,
   waitForStartedMocks,

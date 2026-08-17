@@ -1,3 +1,7 @@
+/**
+ * Brave Search HTTP runtime. It resolves credentials, enforces endpoint safety,
+ * applies caching, and maps Brave web/LLM-context API responses.
+ */
 import {
   assertOkOrThrowProviderError,
   readProviderJsonResponse,
@@ -88,8 +92,10 @@ function describeBraveRequestUrl(url: URL): {
 
 function resolveBraveApiKey(searchConfig?: SearchConfigRecord): string | undefined {
   return (
-    readConfiguredSecretString(searchConfig?.apiKey, "tools.web.search.apiKey") ??
-    readProviderEnvValue(["BRAVE_API_KEY"])
+    readConfiguredSecretString(
+      searchConfig?.apiKey,
+      "plugins.entries.brave.config.webSearch.apiKey",
+    ) ?? readProviderEnvValue(["BRAVE_API_KEY"])
   );
 }
 
@@ -200,6 +206,7 @@ async function runBraveJsonRequest<T>(
     apiKey: string;
     timeoutSeconds: number;
     diagnostics?: BraveHttpDiagnostics;
+    signal?: AbortSignal;
     configureUrl: (url: URL) => void;
   },
   errorLabel: string,
@@ -222,6 +229,7 @@ async function runBraveJsonRequest<T>(
     {
       url: url.toString(),
       timeoutSeconds: params.timeoutSeconds,
+      signal: params.signal,
       init: {
         method: "GET",
         headers: {
@@ -250,6 +258,7 @@ async function runBraveLlmContextSearch(params: {
   apiKey: string;
   timeoutSeconds: number;
   diagnostics?: BraveHttpDiagnostics;
+  signal?: AbortSignal;
   country?: string;
   search_lang?: string;
   freshness?: string;
@@ -273,6 +282,7 @@ async function runBraveLlmContextSearch(params: {
       apiKey: params.apiKey,
       timeoutSeconds: params.timeoutSeconds,
       diagnostics: params.diagnostics,
+      signal: params.signal,
       configureUrl: (url) => {
         setBraveSearchUrlParams(url, params);
       },
@@ -290,6 +300,7 @@ async function runBraveWebSearch(params: {
   apiKey: string;
   timeoutSeconds: number;
   diagnostics?: BraveHttpDiagnostics;
+  signal?: AbortSignal;
   country?: string;
   search_lang?: string;
   ui_lang?: string;
@@ -306,6 +317,7 @@ async function runBraveWebSearch(params: {
       apiKey: params.apiKey,
       timeoutSeconds: params.timeoutSeconds,
       diagnostics: params.diagnostics,
+      signal: params.signal,
       configureUrl: (url) => {
         setBraveSearchUrlParams(url, {
           ...params,
@@ -334,11 +346,13 @@ async function runBraveWebSearch(params: {
   });
 }
 
+/** Execute one Brave Search request using web or LLM-context mode. */
 export async function executeBraveSearch(
   args: Record<string, unknown>,
   searchConfig?: SearchConfigRecord,
   options?: {
     diagnosticsEnabled?: boolean;
+    signal?: AbortSignal;
   },
 ): Promise<Record<string, unknown>> {
   const apiKey = resolveBraveApiKey(searchConfig);
@@ -478,12 +492,14 @@ export async function executeBraveSearch(
       apiKey,
       timeoutSeconds,
       diagnostics,
+      signal: options?.signal,
       country: country ?? undefined,
       search_lang: normalizedLanguage.search_lang,
       freshness,
       dateAfter,
       dateBefore,
     });
+    options?.signal?.throwIfAborted();
     const payload = {
       query,
       provider: "brave",
@@ -523,6 +539,7 @@ export async function executeBraveSearch(
     apiKey,
     timeoutSeconds,
     diagnostics,
+    signal: options?.signal,
     country: country ?? undefined,
     search_lang: normalizedLanguage.search_lang,
     ui_lang: normalizedLanguage.ui_lang,
@@ -530,6 +547,7 @@ export async function executeBraveSearch(
     dateAfter,
     dateBefore,
   });
+  options?.signal?.throwIfAborted();
   const payload = {
     query,
     provider: "brave",

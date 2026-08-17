@@ -1,17 +1,46 @@
-import { describe, expect, it } from "vitest";
+/** Tests core secret target registry queries without plugin discovery. */
+import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   buildTalkTestProviderConfig,
   TALK_TEST_PROVIDER_API_KEY_PATH,
   TALK_TEST_PROVIDER_ID,
 } from "../test-utils/talk-test-provider.js";
-import { getCoreSecretTargetRegistry } from "./target-registry-data.js";
 import {
   discoverConfigSecretTargetsByIds,
   resolveConfigSecretTargetByPath,
+  resolveSecretPlanTargetByPathCore,
 } from "./target-registry.js";
 
+vi.mock("../plugins/plugin-metadata-snapshot.js", () => ({
+  resolvePluginMetadataSnapshot: () => ({ plugins: [] }),
+}));
+
 describe("secret target registry", () => {
+  it("discovers core MCP env and header targets", () => {
+    const config = {
+      mcp: {
+        servers: {
+          local: { command: "example-mcp", env: { API_TOKEN: "plain" } },
+          remote: {
+            url: "https://mcp.example.test",
+            headers: { Authorization: "Bearer plain" },
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    const targets = discoverConfigSecretTargetsByIds(
+      config,
+      new Set(["mcp.servers.*.env.*", "mcp.servers.*.headers.*"]),
+    );
+
+    expect(targets.map((target) => target.path).toSorted()).toEqual([
+      "mcp.servers.local.env.API_TOKEN",
+      "mcp.servers.remote.headers.Authorization",
+    ]);
+  });
+
   it("supports filtered discovery by target ids", () => {
     const config = {
       ...buildTalkTestProviderConfig({ source: "env", provider: "default", id: "TALK_API_KEY" }),
@@ -30,81 +59,17 @@ describe("secret target registry", () => {
     expect(targets[0]?.path).toBe(TALK_TEST_PROVIDER_API_KEY_PATH);
   });
 
-  it("discovers core mcp env and header SecretRef targets", () => {
-    const config = {
-      mcp: {
-        servers: {
-          "mission-control": {
-            env: {
-              MC_API_KEY: { source: "env" as const, provider: "default", id: "MC_API_KEY" },
-            },
-            headers: {
-              Authorization: {
-                source: "env" as const,
-                provider: "default",
-                id: "REMOTE_MCP_AUTH",
-              },
-            },
-          },
-        },
-      },
-    } satisfies OpenClawConfig;
-
-    const targets = discoverConfigSecretTargetsByIds(
-      config,
-      new Set(["mcp.servers.*.env.*", "mcp.servers.*.headers.*"]),
-    ).map((target) => target.path);
-
-    expect(targets).toEqual([
-      "mcp.servers.mission-control.env.MC_API_KEY",
-      "mcp.servers.mission-control.headers.Authorization",
+  it("resolves talk realtime provider api key targets", () => {
+    const target = resolveConfigSecretTargetByPath([
+      "talk",
+      "realtime",
+      "providers",
+      "openai",
+      "apiKey",
     ]);
-  });
 
-  it("discovers generic core mcp env and header paths from the registry", () => {
-    const config = {
-      mcp: {
-        servers: {
-          "mission-control": {
-            env: {
-              MC_URL: { source: "env" as const, provider: "default", id: "MC_URL" },
-              MC_API_KEY: { source: "env" as const, provider: "default", id: "MC_API_KEY" },
-            },
-            headers: {
-              "X-Feature-Flag": {
-                source: "env" as const,
-                provider: "default",
-                id: "FEATURE_FLAG",
-              },
-              Authorization: {
-                source: "env" as const,
-                provider: "default",
-                id: "REMOTE_MCP_AUTH",
-              },
-            },
-          },
-        },
-      },
-    } satisfies OpenClawConfig;
-
-    const targets = discoverConfigSecretTargetsByIds(
-      config,
-      new Set(["mcp.servers.*.env.*", "mcp.servers.*.headers.*"]),
-    ).map((target) => target.path);
-
-    expect(targets).toEqual([
-      "mcp.servers.mission-control.env.MC_URL",
-      "mcp.servers.mission-control.env.MC_API_KEY",
-      "mcp.servers.mission-control.headers.X-Feature-Flag",
-      "mcp.servers.mission-control.headers.Authorization",
-    ]);
-  });
-
-  it("resolves config targets by exact path including sibling ref metadata", () => {
-    const target = resolveConfigSecretTargetByPath(["channels", "googlechat", "serviceAccount"]);
-
-    expect(target?.entry?.id).toBe("channels.googlechat.serviceAccount");
-    expect(target?.refPathSegments).toEqual(["channels", "googlechat", "serviceAccountRef"]);
+    expect(target?.entry?.id).toBe("talk.realtime.providers.*.apiKey");
+    expect(target?.providerId).toBe("openai");
   });
 
   it("returns null when no config target path matches", () => {
@@ -113,81 +78,18 @@ describe("secret target registry", () => {
     expect(target).toBeNull();
   });
 
-  it("derives bundled web provider api key target paths from plugin manifests", () => {
-    const coreTargetIds = new Set(getCoreSecretTargetRegistry().map((entry) => entry.id));
-    expect(coreTargetIds.has("plugins.entries.exa.config.webSearch.apiKey")).toBe(false);
-    expect(coreTargetIds.has("plugins.entries.firecrawl.config.webFetch.apiKey")).toBe(false);
+  it("resolves plan targets by owning config document", () => {
+    const configTarget = resolveSecretPlanTargetByPathCore({
+      configFile: "openclaw.json",
+      pathSegments: ["models", "providers", "openai", "apiKey"],
+    });
+    const authProfileTarget = resolveSecretPlanTargetByPathCore({
+      configFile: "auth-profiles.json",
+      pathSegments: ["profiles", "openai:default", "key"],
+    });
 
-    const target = resolveConfigSecretTargetByPath([
-      "plugins",
-      "entries",
-      "exa",
-      "config",
-      "webSearch",
-      "apiKey",
-    ]);
-
-    expect(target?.entry?.id).toBe("plugins.entries.exa.config.webSearch.apiKey");
-
-    const fetchTarget = resolveConfigSecretTargetByPath([
-      "plugins",
-      "entries",
-      "firecrawl",
-      "config",
-      "webFetch",
-      "apiKey",
-    ]);
-    expect(fetchTarget?.entry?.id).toBe("plugins.entries.firecrawl.config.webFetch.apiKey");
-  });
-
-  it("derives bundled plugin SecretInput contract target paths from plugin manifests", () => {
-    const coreTargetIds = new Set(getCoreSecretTargetRegistry().map((entry) => entry.id));
-    expect(coreTargetIds.has("plugins.entries.voice-call.config.twilio.authToken")).toBe(false);
-
-    const target = resolveConfigSecretTargetByPath([
-      "plugins",
-      "entries",
-      "voice-call",
-      "config",
-      "tts",
-      "providers",
-      "elevenlabs",
-      "apiKey",
-    ]);
-
-    expect(target?.entry?.id).toBe("plugins.entries.voice-call.config.tts.providers.*.apiKey");
-  });
-
-  it("resolves core mcp env target paths", () => {
-    const target = resolveConfigSecretTargetByPath([
-      "mcp",
-      "servers",
-      "mission-control",
-      "env",
-      "MC_API_KEY",
-    ]);
-
-    expect(target).not.toBeNull();
-    expect(target?.entry?.id).toBe("mcp.servers.*.env.*");
-  });
-
-  it("resolves generic core mcp env and header paths as secret targets", () => {
-    const envTarget = resolveConfigSecretTargetByPath([
-      "mcp",
-      "servers",
-      "mission-control",
-      "env",
-      "MC_URL",
-    ]);
-    const headerTarget = resolveConfigSecretTargetByPath([
-      "mcp",
-      "servers",
-      "mission-control",
-      "headers",
-      "X-Feature-Flag",
-    ]);
-
-    expect(envTarget?.entry?.id).toBe("mcp.servers.*.env.*");
-    expect(headerTarget?.entry?.id).toBe("mcp.servers.*.headers.*");
+    expect(configTarget?.entry.targetType).toBe("models.providers.apiKey");
+    expect(configTarget?.providerId).toBe("openai");
+    expect(authProfileTarget?.entry.targetType).toBe("auth-profiles.api_key.key");
   });
 });

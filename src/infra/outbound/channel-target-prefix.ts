@@ -1,3 +1,5 @@
+// Target prefix helpers separate provider-owned prefixes from generic target
+// kind prefixes and validate selected-channel mismatches.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { getActivePluginChannelRegistryFromState } from "../../plugins/runtime-channel-state.js";
 import { normalizeMessageChannel } from "../../utils/message-channel-core.js";
@@ -26,7 +28,7 @@ export function stripTargetProviderPrefix(raw: string, ...providers: string[]): 
 }
 
 /** Removes generic target-kind prefixes such as room:, thread:, or user:. */
-export function stripTargetKindPrefix(
+export function stripOutboundTargetKindPrefix(
   raw: string,
   kinds: readonly string[] = ["channel", "conversation", "dm", "group", "room", "thread", "user"],
 ): string {
@@ -51,7 +53,7 @@ export function stripTargetTopicSuffix(
 }
 
 /** Parsed provider prefix and the channel that owns it. */
-export type ChannelTargetProviderPrefix = {
+type ChannelTargetProviderPrefix = {
   prefix: string;
   channel: string;
 };

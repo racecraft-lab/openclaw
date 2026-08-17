@@ -1,10 +1,11 @@
+// Agent and agents command registration with lazy command-module loading for startup speed.
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
+import { createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
 import { hasExplicitOptions } from "../command-options.js";
 import { formatHelpExamples } from "../help-format.js";
 import { collectOption } from "./helpers.js";
-import { registerAgentTurnCommand } from "./register.agent-turn.js";
 
 type AgentsAddModule = typeof import("../../commands/agents.commands.add.js");
 type AgentsBindModule = typeof import("../../commands/agents.commands.bind.js");
@@ -14,11 +15,9 @@ type AgentsListModule = typeof import("../../commands/agents.commands.list.js");
 type CliUtilsModule = typeof import("../cli-utils.js");
 type RuntimeModule = typeof import("../../runtime.js");
 
-let agentsBindModulePromise: Promise<AgentsBindModule> | undefined;
-
-function loadAgentsBindModule(): Promise<AgentsBindModule> {
-  return (agentsBindModulePromise ??= import("../../commands/agents.commands.bind.js"));
-}
+const loadAgentsBindModule = createLazyRuntimeModule(
+  () => import("../../commands/agents.commands.bind.js"),
+);
 
 async function loadAgentsAddCommand(): Promise<AgentsAddModule["agentsAddCommand"]> {
   return (await import("../../commands/agents.commands.add.js")).agentsAddCommand;
@@ -70,14 +69,7 @@ async function runAgentsCommandAction(
   });
 }
 
-export function registerAgentCommands(
-  program: Command,
-  args: { agentChannelOptions: string },
-): void {
-  registerAgentTurnCommand(program, args);
-  registerAgentsCommands(program);
-}
-
+/** Register `agents` management subcommands for config, bindings, identity, and deletion. */
 export function registerAgentsCommands(program: Command): void {
   const agents = program
     .command("agents")
@@ -93,11 +85,16 @@ export function registerAgentsCommands(program: Command): void {
     .description("List configured agents")
     .option("--json", "Output JSON instead of text", false)
     .option("--bindings", "Include routing bindings", false)
+    .option("--tree", "Render agent creation hierarchy", false)
     .action(async (opts): Promise<void> => {
       await runAgentsCommandAction(async (runtime) => {
         const agentsListCommand = await loadAgentsListCommand();
         await agentsListCommand(
-          { json: Boolean(opts.json), bindings: Boolean(opts.bindings) },
+          {
+            json: Boolean(opts.json),
+            bindings: Boolean(opts.bindings),
+            tree: Boolean(opts.tree),
+          },
           runtime,
         );
       });
@@ -185,6 +182,14 @@ export function registerAgentsCommands(program: Command): void {
           "agentDir",
           "bind",
           "nonInteractive",
+          "json",
+        ]);
+        const hasAutomationFlags = hasExplicitOptions(command, [
+          "workspace",
+          "model",
+          "agentDir",
+          "bind",
+          "nonInteractive",
         ]);
         const agentsAddCommand = await loadAgentsAddCommand();
         await agentsAddCommand(
@@ -198,7 +203,7 @@ export function registerAgentsCommands(program: Command): void {
             json: Boolean(opts.json),
           },
           runtime,
-          { hasFlags },
+          { hasFlags, hasAutomationFlags },
         );
       });
     });

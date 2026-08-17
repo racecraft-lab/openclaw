@@ -1,4 +1,7 @@
+// Before-terminal-delivery tests cover the async gate that can suppress or
+// release deferred assistant events and block replies at run completion.
 import { describe, expect, it, vi } from "vitest";
+import { getReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import {
   emitAssistantTextDeltaAndEnd,
   createSubscribedSessionHarness,
@@ -6,6 +9,8 @@ import {
 } from "./embedded-agent-subscribe.e2e-harness.js";
 
 function hasAssistantEvent(calls: Array<unknown[]>): boolean {
+  // The gate buffers assistant stream events; tests use this helper to assert
+  // nothing leaks before the terminal decision resolves.
   return calls.some((call) => {
     const event = call[0] as { stream?: string } | undefined;
     return event?.stream === "assistant";
@@ -68,6 +73,8 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
   });
 
   it("waits for async terminal gate decisions before draining", async () => {
+    // waitForPendingEvents must include the gate promise or callers can observe
+    // a drained subscription before terminal delivery has been decided.
     const onBlockReply = vi.fn();
     let resolveGate: ((value: { suppressTerminalDelivery: true }) => void) | undefined;
     const onBeforeTerminalDelivery = vi.fn(
@@ -212,6 +219,7 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
     await subscription.waitForPendingEvents();
     expect(onBlockReply).toHaveBeenCalledWith(
       expect.objectContaining({ text: "Fallback answer." }),
+      { assistantMessageIndex: 1 },
     );
     expect(hasLifecycleEndEvent(onAgentEvent.mock.calls)).toBe(true);
   });
@@ -247,6 +255,32 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
     await vi.waitFor(() => expect(onBlockReply).toHaveBeenCalledTimes(1));
     expect(onBlockReply).toHaveBeenCalledWith(
       expect.objectContaining({ text: "Accepted answer." }),
+      { assistantMessageIndex: 1 },
     );
+  });
+
+  it("preserves original transcript media references on deferred block replies", async () => {
+    const onBlockReply = vi.fn();
+    const { emit } = createSubscribedSessionHarness({
+      runId: "run-before-terminal-media",
+      onBlockReply,
+      onBeforeTerminalDelivery: vi.fn(async () => undefined),
+      blockReplyBreak: "message_end",
+    });
+    const text = "MEDIA:/tmp/generated.png\nAttached image";
+
+    emitMessageStartAndEndForAssistantText({ emit, text });
+    emit({
+      type: "agent_end",
+      messages: [{ role: "assistant", content: [{ type: "text", text }], stopReason: "stop" }],
+      willRetry: false,
+    });
+
+    await vi.waitFor(() => expect(onBlockReply).toHaveBeenCalledTimes(1));
+    const payload = onBlockReply.mock.calls[0]?.[0] as object;
+    expect(getReplyPayloadMetadata(payload)).toMatchObject({
+      assistantMessageIndex: 1,
+      assistantTranscriptMediaUrls: ["/tmp/generated.png"],
+    });
   });
 });

@@ -1,9 +1,10 @@
+// Workboard plugin module implements persistence types behavior.
 import type {
   WorkboardAttachment,
   WorkboardBoardMetadata,
   WorkboardCard,
   WorkboardNotificationSubscription,
-} from "./types.js";
+} from "@openclaw/workboard-contract";
 
 export type PersistedWorkboardCard = {
   version: 1;
@@ -32,3 +33,19 @@ export type WorkboardKeyedStore<T = PersistedWorkboardCard> = {
   delete(key: string): Promise<boolean>;
   entries(): Promise<Array<{ key: string; value: T }>>;
 };
+
+export type WorkboardBoardCardAggregate = {
+  boardId: string;
+  status: WorkboardCard["status"];
+  total: number;
+  archived: number;
+  updatedAt: number;
+};
+
+export type WorkboardCardStore = WorkboardKeyedStore & {
+  listBoardAggregates(): Promise<WorkboardBoardCardAggregate[]>;
+};
+
+export function isWorkboardCardStore(store: WorkboardKeyedStore): store is WorkboardCardStore {
+  return "listBoardAggregates" in store && typeof store.listBoardAggregates === "function";
+}

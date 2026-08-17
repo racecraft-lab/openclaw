@@ -1,3 +1,4 @@
+// Covers outbound result envelope flattening and payload/meta wrapping.
 import { describe, expect, it } from "vitest";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import { buildOutboundResultEnvelope } from "./envelope.js";
@@ -10,7 +11,7 @@ describe("buildOutboundResultEnvelope", () => {
     to: "123",
     messageId: "m1",
     mediaUrl: null,
-    chatId: "c1",
+    target: { kind: "chat", id: "c1" },
   };
   const payloads = [{ text: "hi", mediaUrl: null, mediaUrls: undefined }];
 

@@ -1,9 +1,13 @@
+/** Tests model-facing descriptions selected from the final authorized tool set. */
+import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it } from "vitest";
-import { applyDeferredFollowupToolDescriptions } from "./agent-tools.deferred-followup.js";
+import { getPluginToolMeta, setPluginToolMeta } from "../plugins/tools.js";
+import { applyToolAvailabilityDescriptions } from "./agent-tools.deferred-followup.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
+import { getChannelAgentToolMeta, setChannelAgentToolMeta } from "./channel-tool-metadata.js";
 
 function findToolDescription(toolName: string, includeCron: boolean) {
-  const tools = applyDeferredFollowupToolDescriptions([
+  const tools = applyToolAvailabilityDescriptions([
     { name: "exec", description: "exec base" },
     { name: "process", description: "process base" },
     ...(includeCron ? [{ name: "cron", description: "cron base" }] : []),
@@ -15,17 +19,17 @@ function findToolDescription(toolName: string, includeCron: boolean) {
   };
 }
 
-describe("createOpenClawCodingTools deferred follow-up guidance", () => {
+describe("createOpenClawCodingTools availability guidance", () => {
   it("keeps cron-specific guidance when cron survives filtering", () => {
     const exec = findToolDescription("exec", true);
     const process = findToolDescription("process", true);
 
     expect(exec.toolNames).toEqual(["exec", "process", "cron"]);
     expect(exec.description).toBe(
-      "Execute shell commands with background continuation for work that starts now. Use yieldMs/background to continue later via process tool. For long-running work started now, rely on automatic completion wake when it is enabled and the command emits output or fails; otherwise use process to confirm completion. Use process whenever you need logs, status, input, or intervention. Do not use exec sleep or delay loops for reminders or deferred follow-ups; use cron instead. Use pty=true for TTY-required commands (terminal UIs, coding agents).",
+      "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Long run: automatic completion wake when enabled and output/failure occurs; otherwise process confirms completion. No sleep/delay loops for reminders/follow-ups; use cron. TTY CLI/UI/coding agent: pty=true.",
     );
     expect(process.description).toBe(
-      "Manage running exec sessions for commands already started: list, poll, log, write, send-keys, submit, paste, kill. Use poll/log when you need status, logs, quiet-success confirmation, or completion confirmation when automatic completion wake is unavailable. Use poll/log also for input-wait hints. Use write/send-keys/submit/paste/kill for input or intervention. Do not use process polling to emulate timers or reminders; use cron for scheduled follow-ups.",
+      "Control existing exec: list, poll, log, write, send-keys, submit, paste, kill. poll/log: status, output, quiet success, completion without auto-wake, input hints. Others: input/intervention. No polling as timer/reminder; scheduled follow-up uses cron.",
     );
   });
 
@@ -35,10 +39,48 @@ describe("createOpenClawCodingTools deferred follow-up guidance", () => {
 
     expect(exec.toolNames).toEqual(["exec", "process"]);
     expect(exec.description).toBe(
-      "Execute shell commands with background continuation for work that starts now. Use yieldMs/background to continue later via process tool. For long-running work started now, rely on automatic completion wake when it is enabled and the command emits output or fails; otherwise use process to confirm completion. Use process whenever you need logs, status, input, or intervention. Use pty=true for TTY-required commands (terminal UIs, coding agents).",
+      "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Long run: automatic completion wake when enabled and output/failure occurs; otherwise process confirms completion. TTY CLI/UI/coding agent: pty=true.",
     );
     expect(process.description).toBe(
-      "Manage running exec sessions for commands already started: list, poll, log, write, send-keys, submit, paste, kill. Use poll/log when you need status, logs, quiet-success confirmation, or completion confirmation when automatic completion wake is unavailable. Use poll/log also for input-wait hints. Use write/send-keys/submit/paste/kill for input or intervention.",
+      "Control existing exec: list, poll, log, write, send-keys, submit, paste, kill. poll/log: status, output, quiet success, completion without auto-wake, input hints. Others: input/intervention.",
     );
+  });
+
+  it("preserves ownership metadata when replacing process descriptions", () => {
+    const processTool = {
+      name: "process",
+      description: "plugin process",
+    } as AnyAgentTool;
+    setPluginToolMeta(processTool, { pluginId: "example", optional: false });
+    setChannelAgentToolMeta(processTool as never, { channelId: "example-channel" });
+
+    const [updated] = applyToolAvailabilityDescriptions([processTool]);
+
+    expect(updated).not.toBe(processTool);
+    expect(getPluginToolMeta(expectDefined(updated, "updated test invariant"))).toEqual({
+      pluginId: "example",
+      optional: false,
+    });
+    expect(getChannelAgentToolMeta(updated as never)).toEqual({
+      channelId: "example-channel",
+    });
+  });
+
+  it("mentions sessions_spawn only when it survives tool filtering", () => {
+    const withoutSpawn = applyToolAvailabilityDescriptions([
+      { name: "agents_list", description: "base" },
+      { name: "agents_wait", description: "base" },
+    ] as AnyAgentTool[]);
+    const withSpawn = applyToolAvailabilityDescriptions([
+      ...withoutSpawn,
+      { name: "sessions_spawn", description: "spawn" },
+    ] as AnyAgentTool[]);
+
+    for (const tool of withoutSpawn) {
+      expect(tool.description).not.toContain("sessions_spawn");
+    }
+    for (const tool of withSpawn.filter((entry) => entry.name !== "sessions_spawn")) {
+      expect(tool.description).toContain("sessions_spawn");
+    }
   });
 });

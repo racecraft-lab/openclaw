@@ -1,6 +1,16 @@
+/**
+ * Estimates message and tool-result character costs for context guards.
+ */
 import type { AgentMessage } from "../runtime/index.js";
+import {
+  BRANCH_SUMMARY_PREFIX,
+  BRANCH_SUMMARY_SUFFIX,
+  COMPACTION_SUMMARY_PREFIX,
+  COMPACTION_SUMMARY_SUFFIX,
+  bashExecutionToText,
+} from "../runtime/index.js";
+import { estimateToolResultTextChars } from "./tool-result-text-budget.js";
 
-export const CHARS_PER_TOKEN_ESTIMATE = 4;
 export const TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE = 2;
 const IMAGE_CHAR_ESTIMATE = 8_000;
 
@@ -62,6 +72,22 @@ function estimateContentBlockChars(content: unknown[]): number {
       chars += IMAGE_CHAR_ESTIMATE;
     } else {
       chars += estimateUnknownChars(block);
+    }
+  }
+  return chars;
+}
+
+function estimateToolResultContentChars(content: unknown[]): number {
+  let chars = 0;
+  for (const block of content) {
+    if (isTextBlock(block)) {
+      chars += estimateToolResultTextChars(block.text, {
+        minimumRawWeight: TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE,
+      });
+    } else if (isImageBlock(block)) {
+      chars += IMAGE_CHAR_ESTIMATE * TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE;
+    } else {
+      chars += estimateUnknownChars(block) * TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE;
     }
   }
   return chars;
@@ -129,11 +155,39 @@ function estimateMessageChars(msg: AgentMessage): number {
   if (isToolResultMessage(msg)) {
     // `details` is stripped before provider conversion; estimate only visible content.
     const content = getToolResultContent(msg);
-    const chars = estimateContentBlockChars(content);
-    const weightedChars = Math.ceil(
-      chars * (CHARS_PER_TOKEN_ESTIMATE / TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE),
-    );
-    return Math.max(chars, weightedChars);
+    return estimateToolResultContentChars(content);
+  }
+
+  const role: unknown = Reflect.get(msg, "role");
+
+  if (role === "bashExecution") {
+    if (Reflect.get(msg, "excludeFromContext") === true) {
+      return 0;
+    }
+    return bashExecutionToText(msg as Parameters<typeof bashExecutionToText>[0]).length;
+  }
+
+  if (role === "branchSummary") {
+    const rawSummary = Reflect.get(msg, "summary");
+    const summary = typeof rawSummary === "string" ? rawSummary : "";
+    return (BRANCH_SUMMARY_PREFIX + summary + BRANCH_SUMMARY_SUFFIX).length;
+  }
+
+  if (role === "compactionSummary") {
+    const rawSummary = Reflect.get(msg, "summary");
+    const summary = typeof rawSummary === "string" ? rawSummary : "";
+    return (COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX).length;
+  }
+
+  if (role === "custom") {
+    const content = Reflect.get(msg, "content");
+    if (typeof content === "string") {
+      return content.length;
+    }
+    if (Array.isArray(content)) {
+      return estimateContentBlockChars(content);
+    }
+    return 0;
   }
 
   return 256;
@@ -154,18 +208,4 @@ export function estimateMessageCharsCached(
   const estimated = estimateMessageChars(msg);
   cache.set(msg, estimated);
   return estimated;
-}
-
-export function estimateContextChars(
-  messages: AgentMessage[],
-  cache: MessageCharEstimateCache,
-): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageCharsCached(msg, cache), 0);
-}
-
-export function invalidateMessageCharsCacheEntry(
-  cache: MessageCharEstimateCache,
-  msg: AgentMessage,
-): void {
-  cache.delete(msg);
 }

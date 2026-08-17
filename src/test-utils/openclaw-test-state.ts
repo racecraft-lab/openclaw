@@ -1,9 +1,29 @@
+// Creates isolated OpenClaw state directories for integration-style tests.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
+import {
+  closeAuthProfileReadPool,
+  resolveAuthProfileDatabasePath,
+} from "../agents/auth-profiles/sqlite.js";
+import { saveAuthProfileStore } from "../agents/auth-profiles/store.js";
+import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
+import * as configRuntime from "../config/config.js";
+import { GATEWAY_STARTUP_MUTATED_ENV_KEYS } from "../gateway/test-helpers.env.js";
+import { isPathInside } from "../infra/path-guards.js";
+import {
+  closeOpenClawAgentDatabaseByPath,
+  listOpenClawAgentDatabasesForTest,
+} from "../state/openclaw-agent-db.js";
+import { closeOpenClawStateDatabaseByPath } from "../state/openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { captureEnv } from "./env.js";
 import { cleanupSessionStateForTest } from "./session-state-cleanup.js";
+
+type ConfigRuntimeResettable = typeof configRuntime & {
+  resetConfigRuntimeState?: () => void;
+};
 
 type OpenClawTestStateLayout = "home" | "state-only" | "split";
 
@@ -15,7 +35,7 @@ type OpenClawTestStateScenario =
   | "gateway-loopback"
   | "external-service";
 
-export type OpenClawTestStateOptions = {
+type OpenClawTestStateOptions = {
   prefix?: string;
   label?: string;
   layout?: OpenClawTestStateLayout;
@@ -56,12 +76,27 @@ const ENV_KEYS = [
   "USERPROFILE",
   "HOMEDRIVE",
   "HOMEPATH",
+  ...GATEWAY_STARTUP_MUTATED_ENV_KEYS,
   "OPENCLAW_HOME",
   "OPENCLAW_STATE_DIR",
   "OPENCLAW_CONFIG_PATH",
   "OPENCLAW_AGENT_DIR",
   "OPENCLAW_SERVICE_REPAIR_POLICY",
 ] as const;
+
+function resetConfigRuntimeStateForTest(): void {
+  let reset: (() => void) | undefined;
+  try {
+    reset = (configRuntime as ConfigRuntimeResettable).resetConfigRuntimeState;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('No "resetConfigRuntimeState" export is defined')) {
+      return;
+    }
+    throw error;
+  }
+  reset?.();
+}
 
 function normalizeLabel(value: string | undefined): string {
   return (value ?? "state").replace(/[^A-Za-z0-9_.-]+/gu, "-").replace(/^-+|-+$/gu, "") || "state";
@@ -246,7 +281,10 @@ export async function createOpenClawTestState(
 ): Promise<OpenClawTestState> {
   const label = normalizeLabel(options.label ?? options.scenario);
   const prefix = options.prefix ?? `${DEFAULT_PREFIX}${label}-`;
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  // Canonicalize: macOS tmpdir sits behind a symlink (/var -> /private/var) and
+  // production code realpaths state paths, so symlinked roots break tests that
+  // intercept or compare fs paths by equality.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
   const layout = options.layout ?? "home";
   const paths = resolveLayout(root, layout);
 
@@ -299,10 +337,15 @@ export async function createOpenClawTestState(
       return filePath;
     },
     writeAuthProfiles: (store, agentId = "main") => {
-      const filePath = path.join(agentDir(agentId), "auth-profiles.json");
-      return writeJsonFile(filePath, store);
+      const targetAgentDir = agentDir(agentId);
+      saveAuthProfileStore(store as AuthProfileStore, targetAgentDir, {
+        filterExternalAuthProfiles: false,
+        syncExternalCli: false,
+      });
+      return Promise.resolve(resolveAuthProfileDatabasePath(targetAgentDir));
     },
     applyEnv: () => {
+      resetConfigRuntimeStateForTest();
       for (const [key, value] of Object.entries(envVars)) {
         // Test fixtures apply a fixed OpenClaw env set, not plugin-provided host env.
         if (value === undefined) {
@@ -316,6 +359,7 @@ export async function createOpenClawTestState(
     restoreEnv: () => {
       if (envApplied) {
         snapshot.restore();
+        resetConfigRuntimeStateForTest();
         envApplied = false;
       }
     },
@@ -325,8 +369,22 @@ export async function createOpenClawTestState(
       }
       cleaned = true;
       await cleanupSessionStateForTest().catch(() => undefined);
+      closeAuthProfileReadPool({ kind: "root", rootPath: paths.stateDir });
+      // Agent close releases leases through shared state; closing shared state first
+      // can reopen it during teardown and leave Windows handles under the fixture root.
+      for (const database of listOpenClawAgentDatabasesForTest()) {
+        if (isPathInside(paths.stateDir, database.path)) {
+          closeOpenClawAgentDatabaseByPath(database.path);
+        }
+      }
+      closeOpenClawStateDatabaseByPath(resolveOpenClawStateSqlitePath(env));
       state.restoreEnv();
-      await fs.rm(root, { recursive: true, force: true });
+      await fs.rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 25,
+      });
     },
   };
 

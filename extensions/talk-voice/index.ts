@@ -1,3 +1,4 @@
+// Talk Voice plugin entrypoint registers its OpenClaw integration.
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { parseStrictPositiveInteger } from "openclaw/plugin-sdk/number-runtime";
@@ -5,6 +6,7 @@ import type { SpeechVoiceOption } from "openclaw/plugin-sdk/speech";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
+  normalizeOptionalString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { resolveActiveTalkProviderConfig } from "openclaw/plugin-sdk/talk-config-runtime";
 import { definePluginEntry, type OpenClawPluginApi } from "./api.js";
@@ -94,11 +96,7 @@ function findVoice(voices: SpeechVoiceOption[], query: string): SpeechVoiceOptio
 }
 
 function asTrimmedString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function parsePositiveIntegerToken(value: unknown): number | undefined {
-  return parseStrictPositiveInteger(value);
+  return normalizeOptionalString(value) ?? "";
 }
 
 function resolveCommandLabel(channel: string): string {
@@ -112,14 +110,15 @@ function asProviderBaseUrl(value: unknown): string | undefined {
 
 const TALK_ADMIN_SCOPE = "operator.admin";
 
-function requiresAdminToSetVoice(
-  channel: string,
-  gatewayClientScopes?: readonly string[],
-): boolean {
+function requiresAdminToSetVoice(params: {
+  senderIsOwner?: boolean;
+  gatewayClientScopes?: readonly string[];
+}): boolean {
+  const { senderIsOwner, gatewayClientScopes } = params;
   if (Array.isArray(gatewayClientScopes)) {
     return !gatewayClientScopes.includes(TALK_ADMIN_SCOPE);
   }
-  return channel === "webchat";
+  return senderIsOwner !== true;
 }
 
 export default definePluginEntry({
@@ -134,6 +133,7 @@ export default definePluginEntry({
       },
       description: "List/set Talk provider voices (affects iOS Talk playback).",
       acceptsArgs: true,
+      exposeSenderIsOwner: true,
       handler: async (ctx) => {
         const commandLabel = resolveCommandLabel(ctx.channel);
         const args = ctx.args?.trim() ?? "";
@@ -168,7 +168,7 @@ export default definePluginEntry({
         }
 
         if (action === "list") {
-          const limit = parsePositiveIntegerToken(tokens[1]) ?? 12;
+          const limit = parseStrictPositiveInteger(tokens[1]) ?? 12;
           try {
             const voices = await api.runtime.tts.listVoices({
               provider: providerId,
@@ -186,9 +186,14 @@ export default definePluginEntry({
         }
 
         if (action === "set") {
-          // Gateway callers can override messageChannel, so scope presence is
-          // the reliable signal for internal admin-only mutations.
-          if (requiresAdminToSetVoice(ctx.channel, ctx.gatewayClientScopes)) {
+          // Persistent Talk voice changes are gateway config writes, so the
+          // mutating subcommand requires explicit admin or owner authority.
+          if (
+            requiresAdminToSetVoice({
+              senderIsOwner: ctx.senderIsOwner,
+              gatewayClientScopes: ctx.gatewayClientScopes,
+            })
+          ) {
             return { text: `⚠️ ${commandLabel} set requires operator.admin.` };
           }
 
@@ -229,7 +234,6 @@ export default definePluginEntry({
                       voiceId: chosen.id,
                     },
                   },
-                  ...(providerId === "elevenlabs" ? { voiceId: chosen.id } : {}),
                 },
               };
               Object.assign(draft, nextConfig);

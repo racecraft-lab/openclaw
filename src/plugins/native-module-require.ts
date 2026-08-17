@@ -1,8 +1,9 @@
+// Resolves native module require paths for plugin runtime loading.
 import fs from "node:fs";
-import { createRequire } from "node:module";
-import Module from "node:module";
+import Module, { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isPathInside } from "../infra/path-guards.js";
 
 const nodeRequire = createRequire(import.meta.url);
 type ResolveFilename = (
@@ -27,6 +28,7 @@ const moduleWithResolver = Module as typeof Module & {
   }) => { deregister: () => void };
 };
 
+/** True for file extensions Node can load through the native JS module loader. */
 export function isJavaScriptModulePath(modulePath: string): boolean {
   return [".js", ".mjs", ".cjs"].includes(path.extname(modulePath).toLowerCase());
 }
@@ -51,10 +53,12 @@ function isSourceTransformFallbackError(error: unknown, modulePath: string): boo
   return (
     code === "ERR_REQUIRE_ESM" ||
     code === "ERR_REQUIRE_ASYNC_MODULE" ||
+    code === "ERR_REQUIRE_ESM_RACE_CONDITION" ||
     isMissingTargetModuleError(candidate, modulePath)
   );
 }
 
+/** Attempts native require before falling back to source transform paths. */
 export function tryNativeRequireJavaScriptModule(
   modulePath: string,
   options: {
@@ -87,6 +91,7 @@ export function tryNativeRequireJavaScriptModule(
   }
 }
 
+/** Clears a native-loaded module and dependency subtree under the plugin dependency root. */
 export function clearNativeRequireJavaScriptModuleCache(
   modulePath: string,
   options: { dependencyRoot?: string } = {},
@@ -126,17 +131,12 @@ function clearRequireCacheSubtree(
   const cached = nodeRequire.cache[resolvedPath];
   if (cached) {
     for (const child of cached.children) {
-      if (isPathInsideOrSame(dependencyRoot, child.id)) {
+      if (isPathInside(dependencyRoot, child.id)) {
         clearRequireCacheSubtree(child.id, dependencyRoot, seen);
       }
     }
   }
   delete nodeRequire.cache[resolvedPath];
-}
-
-function isPathInsideOrSame(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function requireWithOptionalAliases(
@@ -146,7 +146,8 @@ function requireWithOptionalAliases(
   return withNativeRequireAliases(aliasMap, () => nodeRequire(modulePath));
 }
 
-export function withNativeRequireAliases<T>(
+/** Runs a native require block with temporary CJS/ESM alias hooks and restores both afterward. */
+function withNativeRequireAliases<T>(
   aliasMap: Record<string, string> | undefined,
   run: () => T,
 ): T {

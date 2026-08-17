@@ -1,22 +1,32 @@
-function normalizeOptionalLowercaseString(raw?: string | null): string | undefined {
-  if (typeof raw !== "string") {
-    return undefined;
-  }
-  const normalized = raw.trim().toLowerCase();
-  return normalized || undefined;
+/**
+ * Shared gateway client identity contract.
+ *
+ * These values cross the WebSocket handshake boundary, so additions must stay
+ * aligned with protocol schemas and server policy checks.
+ */
+import { normalizeOptionalProtocolString } from "./protocol-value-normalization.js";
+
+function normalizeOptionalProtocolLowercaseString(raw?: string | null): string | undefined {
+  return normalizeOptionalProtocolString(raw)?.toLowerCase();
 }
 
+/** Canonical client ids accepted in gateway hello/connect payloads. */
 export const GATEWAY_CLIENT_IDS = {
   WEBCHAT_UI: "webchat-ui",
   CONTROL_UI: "openclaw-control-ui",
+  BROWSER_COPILOT: "openclaw-browser-copilot",
   TUI: "openclaw-tui",
   WEBCHAT: "webchat",
   CLI: "cli",
   GATEWAY_CLIENT: "gateway-client",
   MACOS_APP: "openclaw-macos",
+  // Native Linux UI uses the same trusted-client admission class as the macOS app.
+  LINUX_APP: "openclaw-linux",
   IOS_APP: "openclaw-ios",
+  WATCHOS_APP: "openclaw-watchos",
   ANDROID_APP: "openclaw-android",
   NODE_HOST: "node-host",
+  WORKER: "openclaw-worker",
   TEST: "test",
   FINGERPRINT: "fingerprint",
   PROBE: "openclaw-probe",
@@ -30,12 +40,14 @@ export const GATEWAY_CLIENT_NAMES = GATEWAY_CLIENT_IDS;
 /** Compatibility alias for internal callers that still use "name" terminology. */
 export type GatewayClientName = GatewayClientId;
 
+/** Coarse modes let policy group clients without matching every product id. */
 export const GATEWAY_CLIENT_MODES = {
   WEBCHAT: "webchat",
   CLI: "cli",
   UI: "ui",
   BACKEND: "backend",
   NODE: "node",
+  WORKER: "worker",
   PROBE: "probe",
   TEST: "test",
 } as const;
@@ -45,18 +57,39 @@ export type GatewayClientMode = (typeof GATEWAY_CLIENT_MODES)[keyof typeof GATEW
 
 /** Client metadata sent during gateway connection setup. */
 export type GatewayClientInfo = {
+  /** Stable product/client identifier from `GATEWAY_CLIENT_IDS`. */
   id: GatewayClientId;
+  /** Human-readable label for diagnostics; not used for policy decisions. */
   displayName?: string;
+  /** Client app or package version reported by the connecting process. */
   version: string;
+  /** Exact immutable artifact identity when the client can report one. */
+  buildId?: string;
+  /** Runtime platform string, such as `darwin`, `ios`, `android`, or `web`. */
   platform: string;
+  /** Optional device family used by native clients for display and routing hints. */
   deviceFamily?: string;
+  /** Native hardware/model identifier when available. */
   modelIdentifier?: string;
+  /** Coarse category from `GATEWAY_CLIENT_MODES` for policy and diagnostics. */
   mode: GatewayClientMode;
+  /** Per-installation or per-process id used to distinguish same-product clients. */
   instanceId?: string;
 };
 
+/** Capability flags a client may advertise during the gateway handshake. */
 export const GATEWAY_CLIENT_CAPS = {
+  AGENT_KIND: "agent-kind",
+  APPROVALS: "approvals",
+  EXEC_APPROVALS: "exec-approvals",
+  INLINE_WIDGETS: "inline-widgets",
+  RUN_TOOL_BINDINGS: "run-tool-bindings",
+  SESSION_SCOPED_EVENTS: "session-scoped-events",
+  PLUGIN_APPROVALS: "plugin-approvals",
+  TASK_SUGGESTIONS: "task-suggestions",
+  TERMINAL_OFFSET_SEQ: "terminal-offset-seq",
   TOOL_EVENTS: "tool-events",
+  UI_COMMANDS: "ui-commands",
 } as const;
 
 /** Optional capability advertised by clients during gateway handshake. */
@@ -67,7 +100,9 @@ const GATEWAY_CLIENT_MODE_SET = new Set<GatewayClientMode>(Object.values(GATEWAY
 
 /** Normalizes untrusted client ids and rejects unknown values. */
 export function normalizeGatewayClientId(raw?: string | null): GatewayClientId | undefined {
-  const normalized = normalizeOptionalLowercaseString(raw);
+  // Handshake input is intentionally case-insensitive, but policy decisions use
+  // the canonical lowercase ids from the closed registry above.
+  const normalized = normalizeOptionalProtocolLowercaseString(raw);
   if (!normalized) {
     return undefined;
   }
@@ -83,7 +118,7 @@ export function normalizeGatewayClientName(raw?: string | null): GatewayClientNa
 
 /** Normalizes untrusted client modes and rejects unknown values. */
 export function normalizeGatewayClientMode(raw?: string | null): GatewayClientMode | undefined {
-  const normalized = normalizeOptionalLowercaseString(raw);
+  const normalized = normalizeOptionalProtocolLowercaseString(raw);
   if (!normalized) {
     return undefined;
   }

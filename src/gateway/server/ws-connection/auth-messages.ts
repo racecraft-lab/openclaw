@@ -1,12 +1,18 @@
+// WebSocket auth messages format client-specific handshake failures without exposing secret material.
 import {
   isGatewayCliClient,
   isOperatorUiClient,
   isWebchatClient,
 } from "../../../utils/message-channel.js";
 import type { ResolvedGatewayAuth } from "../../auth.js";
+import { PROXY_ATTRIBUTION_REQUIRED_REASON } from "../../ingress-attribution.js";
 
+/**
+ * Human-readable WebSocket auth failure messages for CLI, UI, and webchat clients.
+ */
 export type AuthProvidedKind = "token" | "bootstrap-token" | "device-token" | "password" | "none";
 
+/** Formats a client-specific auth failure message without exposing secret values. */
 export function formatGatewayAuthFailureMessage(params: {
   authMode: ResolvedGatewayAuth["mode"];
   authProvided: AuthProvidedKind;
@@ -17,7 +23,12 @@ export function formatGatewayAuthFailureMessage(params: {
   const isCli = isGatewayCliClient(client);
   const isControlUi = isOperatorUiClient(client);
   const isWebchat = isWebchatClient(client);
+  if (client?.mode === "node" && reason?.startsWith("trusted_proxy_missing_header_")) {
+    return "gateway rejected this node: trusted-proxy identity-header authentication is required and no usable machine credential was accepted; run `openclaw doctor` on the Gateway";
+  }
   const uiHint = "open the dashboard URL and paste the token in Control UI settings";
+  const missingUiTokenHint =
+    "paste in Control UI settings or openclaw doctor --generate-gateway-token; restart";
   const tokenHint = isCli
     ? "set gateway.remote.token to match gateway.auth.token"
     : isControlUi || isWebchat
@@ -30,7 +41,7 @@ export function formatGatewayAuthFailureMessage(params: {
       : "provide gateway auth password";
   switch (reason) {
     case "token_missing":
-      return `unauthorized: gateway token missing (${tokenHint})`;
+      return `unauthorized: gateway token missing (${isControlUi || isWebchat ? missingUiTokenHint : tokenHint})`;
     case "token_mismatch":
       return `unauthorized: gateway token mismatch (${tokenHint})`;
     case "token_missing_config":
@@ -53,6 +64,8 @@ export function formatGatewayAuthFailureMessage(params: {
       return "unauthorized: tailscale identity mismatch (use Tailscale Serve auth or gateway token/password)";
     case "rate_limited":
       return "unauthorized: too many failed authentication attempts (retry later)";
+    case PROXY_ATTRIBUTION_REQUIRED_REASON:
+      return "unauthorized: proxy client attribution is required (configure gateway.trustedProxies narrowly and make the proxy overwrite or safely rebuild forwarded client headers)";
     case "device_token_mismatch":
       return "unauthorized: device token mismatch (rotate/reissue device token)";
     case "scope_mismatch":

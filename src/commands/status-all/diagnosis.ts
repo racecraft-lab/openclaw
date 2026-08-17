@@ -1,3 +1,6 @@
+// Appends the read-only diagnosis section for `openclaw status --all`.
+// Every line that can include logs, config, or connection details is redacted before display.
+
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ProgressReporter } from "../../cli/progress.js";
 import { formatConfigIssueLine } from "../../config/issue-format.js";
@@ -26,7 +29,8 @@ import {
   formatUpdateRestartStatusValue,
 } from "../status-update-restart.ts";
 import type { NodeOnlyGatewayInfo } from "../status.node-mode.js";
-import { formatTimeAgo, redactSecrets } from "./format.js";
+import { formatTelemetryExporterSummary } from "../telemetry-exporter-summary.js";
+import { formatTimeAgo, redactStatusSecrets } from "./format.js";
 import { readFileTailLines, summarizeLogTail } from "./gateway.js";
 
 type ConfigIssueLike = { path: string; message: string };
@@ -112,6 +116,7 @@ function countDeliveryEvent(snapshot: DeliveryDiagnosticsLike, type: string): nu
 }
 
 function latestDeliveryEventAgeMs(snapshot: DeliveryDiagnosticsLike): number | null {
+  // Only inbound/dispatch lifecycle events count as delivery freshness signals.
   const latestTs = (snapshot.events ?? [])
     .filter((event) =>
       [
@@ -129,6 +134,7 @@ function latestDeliveryEventAgeMs(snapshot: DeliveryDiagnosticsLike): number | n
   return latestTs > 0 ? Date.now() - latestTs : null;
 }
 
+/** Appends config, gateway, channel, delivery, and log diagnostics to the status-all report. */
 export async function appendStatusAllDiagnosis(params: {
   lines: string[];
   progress: ProgressReporter;
@@ -152,6 +158,7 @@ export async function appendStatusAllDiagnosis(params: {
   channelsStatus: unknown;
   channelIssues: ChannelIssueLike[];
   deliveryDiagnostics: unknown;
+  exporterDiagnostics: unknown;
   agentStatus?: AgentStatusLike;
   gatewayReachable: boolean;
   health: unknown;
@@ -167,7 +174,7 @@ export async function appendStatusAllDiagnosis(params: {
 
   lines.push("");
   lines.push(muted("Gateway connection details:"));
-  for (const line of redactSecrets(params.connectionDetailsForReport)
+  for (const line of redactStatusSecrets(params.connectionDetailsForReport)
     .split("\n")
     .map((l) => l.trimEnd())) {
     lines.push(`  ${muted(line)}`);
@@ -178,6 +185,7 @@ export async function appendStatusAllDiagnosis(params: {
     const status = !params.snap.exists ? "fail" : params.snap.valid ? "ok" : "warn";
     emitCheck(`Config: ${params.snap.path ?? "(unknown)"}`, status);
     const issues = [...(params.snap.legacyIssues ?? []), ...(params.snap.issues ?? [])];
+    // Legacy and current schema checks can report the same path/message pair.
     const uniqueIssues = issues.filter(
       (issue, index) =>
         issues.findIndex((x) => x.path === issue.path && x.message === issue.message) === index,
@@ -203,7 +211,7 @@ export async function appendStatusAllDiagnosis(params: {
     params.secretDiagnostics.length === 0 ? "ok" : "warn",
   );
   for (const diagnostic of params.secretDiagnostics.slice(0, 10)) {
-    lines.push(`  - ${muted(redactSecrets(diagnostic))}`);
+    lines.push(`  - ${muted(redactStatusSecrets(diagnostic))}`);
   }
   if (params.secretDiagnostics.length > 10) {
     lines.push(`  ${muted(`… +${params.secretDiagnostics.length - 10} more`)}`);
@@ -228,11 +236,12 @@ export async function appendStatusAllDiagnosis(params: {
   }
 
   const lastErrClean = normalizeOptionalString(params.lastErr) ?? "";
+  // Restart logs sometimes end with a single brace from truncated JSON; suppress that noise.
   const isTrivialLastErr = lastErrClean.length < 8 || lastErrClean === "}" || lastErrClean === "{";
   if (lastErrClean && !isTrivialLastErr) {
     lines.push("");
     lines.push(muted("Gateway last log line:"));
-    lines.push(`  ${muted(redactSecrets(lastErrClean))}`);
+    lines.push(`  ${muted(redactStatusSecrets(lastErrClean))}`);
   }
 
   if (params.portUsage) {
@@ -244,7 +253,9 @@ export async function appendStatusAllDiagnosis(params: {
       params.portUsage.listeners,
       params.port,
     );
-    const portOk = params.portUsage.listeners.length === 0 || expectedGatewayListeners;
+    const portOk =
+      params.portUsage.status === "free" ||
+      (params.portUsage.status === "busy" && expectedGatewayListeners);
     emitCheck(`Port ${params.port}`, portOk ? "ok" : "warn");
     if (!portOk) {
       const gatewayPidCount = countGatewayListenerPids(params.portUsage);
@@ -328,6 +339,14 @@ export async function appendStatusAllDiagnosis(params: {
     }
   }
 
+  const exporterSummary = formatTelemetryExporterSummary(params.exporterDiagnostics);
+  if (exporterSummary) {
+    emitCheck(exporterSummary.title, exporterSummary.status);
+    for (const line of exporterSummary.lines) {
+      lines.push(`  ${muted(line)}`);
+    }
+  }
+
   if (params.deliveryDiagnostics != null) {
     if (isDeliveryDiagnosticsLike(params.deliveryDiagnostics)) {
       const received = countDeliveryEvent(params.deliveryDiagnostics, "message.received");
@@ -379,6 +398,7 @@ export async function appendStatusAllDiagnosis(params: {
   params.progress.setLabel("Reading logs…");
   const logPaths = (() => {
     try {
+      // macOS supervised installs write stdout/stderr differently than node-managed gateway logs.
       return process.platform === "darwin"
         ? resolveGatewaySupervisorLogPaths(process.env, { platform: "darwin" })
         : resolveGatewayLogPaths(process.env);
@@ -400,19 +420,21 @@ export async function appendStatusAllDiagnosis(params: {
       lines.push(muted(`Gateway logs (tail, summarized): ${logPaths.logDir}`));
       if (readStderr) {
         lines.push(`  ${muted(`# stderr: ${logPaths.stderrPath}`)}`);
-        for (const line of summarizeLogTail(stderrTail, { maxLines: 22 }).map(redactSecrets)) {
+        for (const line of summarizeLogTail(stderrTail, { maxLines: 22 }).map(
+          redactStatusSecrets,
+        )) {
           lines.push(`  ${muted(line)}`);
         }
       }
       lines.push(`  ${muted(`# stdout: ${logPaths.stdoutPath}`)}`);
-      for (const line of summarizeLogTail(stdoutTail, { maxLines: 22 }).map(redactSecrets)) {
+      for (const line of summarizeLogTail(stdoutTail, { maxLines: 22 }).map(redactStatusSecrets)) {
         lines.push(`  ${muted(line)}`);
       }
     }
     if (restartTail.length > 0) {
       lines.push("");
       lines.push(muted(`Gateway restart attempts (tail): ${restartLogPath}`));
-      for (const line of summarizeLogTail(restartTail, { maxLines: 16 }).map(redactSecrets)) {
+      for (const line of summarizeLogTail(restartTail, { maxLines: 16 }).map(redactStatusSecrets)) {
         lines.push(`  ${muted(line)}`);
       }
     }
@@ -469,7 +491,7 @@ export async function appendStatusAllDiagnosis(params: {
   if (healthErr) {
     lines.push("");
     lines.push(muted("Gateway health:"));
-    lines.push(`  ${muted(redactSecrets(healthErr))}`);
+    lines.push(`  ${muted(redactStatusSecrets(healthErr))}`);
   }
 
   lines.push("");

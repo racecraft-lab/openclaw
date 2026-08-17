@@ -1,3 +1,4 @@
+// Resolves trusted tool policy for plugins from runtime config.
 import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isPlainObject } from "../utils.js";
@@ -7,6 +8,7 @@ import type {
   PluginHookToolContext,
   PluginHookToolInputKind,
   PluginHookToolKind,
+  PluginToolMatcher,
 } from "./hook-types.js";
 import { getPluginSessionExtensionStateSync } from "./host-hook-state.js";
 import type { PluginJsonValue, PluginTrustedToolPolicyRegistration } from "./host-hooks.js";
@@ -15,17 +17,31 @@ import type {
   PluginTrustedToolPolicyRegistryRegistration,
 } from "./registry-types.js";
 import { getActivePluginRegistry } from "./runtime.js";
+import {
+  createPluginToolMatcherScope,
+  normalizePluginToolMatcher,
+  pluginToolMatcherCoversTool,
+  type PluginToolMatcherScope,
+} from "./tool-hook-matcher.js";
 
 type TrustedPolicyRegistration = PluginTrustedToolPolicyRegistryRegistration;
+type TrustedToolPolicyRegistry =
+  | { trustedToolPolicies?: PluginRegistry["trustedToolPolicies"] }
+  | null
+  | undefined;
 
-export type TrustedToolPolicyDiagnosticEntry = {
+/** Diagnostic entry for an installed trusted tool policy. */
+type TrustedToolPolicyDiagnosticEntry = {
   id: string;
   pluginId: string;
   pluginName?: string;
 };
 
-export function hasTrustedToolPolicies(): boolean {
-  return copyTrustedPolicyRegistrations(getActivePluginRegistry()).length > 0;
+/** True when the supplied or active plugin registry has trusted tool policies. */
+export function hasTrustedToolPolicies(
+  registry: TrustedToolPolicyRegistry = getActivePluginRegistry(),
+): boolean {
+  return copyTrustedPolicyRegistrations(registry).length > 0;
 }
 
 function unreadableTrustedPolicyRegistration(): TrustedPolicyRegistration {
@@ -39,7 +55,7 @@ function unreadableTrustedPolicyRegistration(): TrustedPolicyRegistration {
 }
 
 function copyTrustedPolicyRegistrations(
-  registry: PluginRegistry | null | undefined,
+  registry: TrustedToolPolicyRegistry,
 ): TrustedPolicyRegistration[] {
   let policies: unknown;
   try {
@@ -99,6 +115,34 @@ function readTrustedPolicy(registration: TrustedPolicyRegistration):
   }
 }
 
+function readTrustedPolicyMatcher(policy: PluginTrustedToolPolicyRegistration):
+  | { ok: true; matcher: PluginToolMatcher | undefined }
+  | {
+      ok: false;
+    } {
+  try {
+    return { ok: true, matcher: normalizePluginToolMatcher(policy.matcher) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export function getTrustedToolPolicyMatcherScope(
+  registry: TrustedToolPolicyRegistry = getActivePluginRegistry(),
+): PluginToolMatcherScope | undefined {
+  return createPluginToolMatcherScope(
+    copyTrustedPolicyRegistrations(registry).map((registration) => {
+      const policy = readTrustedPolicy(registration);
+      if (!policy.ok) {
+        return undefined;
+      }
+      const matcher = readTrustedPolicyMatcher(policy.policy);
+      // Relay every tool so malformed trusted policy state reaches the fail-closed runtime check.
+      return matcher.ok ? matcher.matcher : undefined;
+    }),
+  );
+}
+
 function readTrustedPolicyId(registration: TrustedPolicyRegistration): string {
   const fallback = trustedPolicyDiagnosticPluginId(registration);
   const policy = readTrustedPolicy(registration);
@@ -127,8 +171,11 @@ function trustedPolicyFailureResult(
   };
 }
 
-export function getTrustedToolPolicyDiagnosticEntries(): TrustedToolPolicyDiagnosticEntry[] {
-  return copyTrustedPolicyRegistrations(getActivePluginRegistry()).map((registration) => {
+/** Lists trusted tool policies for status and diagnostics. */
+export function getTrustedToolPolicyDiagnosticEntries(
+  registry: TrustedToolPolicyRegistry = getActivePluginRegistry(),
+): TrustedToolPolicyDiagnosticEntry[] {
+  return copyTrustedPolicyRegistrations(registry).map((registration) => {
     const entry: TrustedToolPolicyDiagnosticEntry = {
       id: readTrustedPolicyId(registration),
       pluginId: trustedPolicyDiagnosticPluginId(registration),
@@ -161,6 +208,7 @@ function normalizeToolIdentity(
   };
 }
 
+/** Runs trusted tool policies before a tool call and returns the first terminal decision. */
 export async function runTrustedToolPolicies(
   event: PluginHookBeforeToolCallEvent,
   ctx: PluginHookToolContext,
@@ -179,9 +227,10 @@ export async function runTrustedToolPolicies(
           ctx?: Pick<PluginHookToolContext, "toolKind" | "toolInputKind">;
         }
       | undefined;
+    registry?: TrustedToolPolicyRegistry;
   },
 ): Promise<PluginHookBeforeToolCallResult | undefined> {
-  const policies = copyTrustedPolicyRegistrations(getActivePluginRegistry());
+  const policies = copyTrustedPolicyRegistrations(options?.registry ?? getActivePluginRegistry());
   let adjustedParams = event.params;
   let hasAdjustedParams = false;
   let approval: PluginHookBeforeToolCallResult["requireApproval"];
@@ -251,6 +300,13 @@ export async function runTrustedToolPolicies(
     if (!policy.ok) {
       return trustedPolicyFailureResult(registration, "policy is unreadable");
     }
+    const matcher = readTrustedPolicyMatcher(policy.policy);
+    if (!matcher.ok) {
+      return trustedPolicyFailureResult(registration, "policy matcher is unreadable");
+    }
+    if (!pluginToolMatcherCoversTool(matcher.matcher, event.toolName)) {
+      continue;
+    }
 
     let decision: Awaited<ReturnType<PluginTrustedToolPolicyRegistration["evaluate"]>>;
     try {
@@ -262,6 +318,7 @@ export async function runTrustedToolPolicies(
       continue;
     }
     try {
+      // Policies run in order; block decisions are terminal, mutations feed later policies.
       if ("allow" in decision && decision.allow === false) {
         return {
           block: true,

@@ -1,3 +1,4 @@
+// Run Vitest Profile tests cover run vitest profile script behavior.
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import {
   buildVitestProfileCommandWithArgs,
   parseArgs,
   resolveVitestProfileDir,
-} from "../../scripts/run-vitest-profile.mjs";
+} from "../../scripts/run-vitest-profile.mts";
 import { createScriptTestHarness } from "./test-helpers.js";
 
 describe("scripts/run-vitest-profile", () => {
@@ -86,6 +87,16 @@ describe("scripts/run-vitest-profile", () => {
       outputDir: "/tmp/out",
       vitestArgs: [],
     });
+  });
+
+  it("rejects missing profile output directories", () => {
+    expect(() => parseArgs(["runner", "--output-dir"])).toThrow("Expected --output-dir <dir>.");
+    expect(() => parseArgs(["runner", "--output-dir", "-h"])).toThrow(
+      "Expected --output-dir <dir>.",
+    );
+    expect(() => parseArgs(["runner", "--output-dir", "--", "--config", "custom.ts"])).toThrow(
+      "Expected --output-dir <dir>.",
+    );
   });
 
   it("passes vitest args after a separator", () => {

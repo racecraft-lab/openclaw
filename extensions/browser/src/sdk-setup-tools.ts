@@ -1,17 +1,18 @@
+/**
+ * Browser-local SDK setup/tooling bridge for CLI, media, and action helpers.
+ */
 export {
   callGatewayTool,
   listNodes,
   resolveNodeIdFromList,
-  selectDefaultNodeFromList,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
-export type { AnyAgentTool, NodeListNode } from "openclaw/plugin-sdk/agent-harness-runtime";
+export type { AnyAgentTool } from "openclaw/plugin-sdk/agent-harness-runtime";
 export {
   imageResultFromFile,
   jsonResult,
   readPositiveIntegerParam,
   readStringParam,
 } from "openclaw/plugin-sdk/channel-actions";
-export { optionalStringEnum, stringEnum } from "openclaw/plugin-sdk/channel-actions";
 export {
   formatCliCommand,
   formatHelpExamples,

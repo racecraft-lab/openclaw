@@ -1,3 +1,4 @@
+// Cli Startup Bench Spawner tests cover cli startup bench spawner script behavior.
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -5,8 +6,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SCRIPT_PATHS = [
-  "scripts/test-cli-startup-bench-budget.mjs",
-  "scripts/test-update-cli-startup-bench.mjs",
+  "scripts/test-cli-startup-bench-budget.mts",
+  "scripts/test-update-cli-startup-bench.mts",
 ];
 
 describe("CLI startup benchmark script spawners", () => {
@@ -21,16 +22,134 @@ describe("CLI startup benchmark script spawners", () => {
 
   it("builds the source CLI before generating a startup budget report", () => {
     const source = fs.readFileSync(
-      path.resolve(process.cwd(), "scripts/test-cli-startup-bench-budget.mjs"),
+      path.resolve(process.cwd(), "scripts/test-cli-startup-bench-budget.mts"),
       "utf8",
     );
 
-    expect(source).toContain(
-      'spawnSync(process.execPath, ["scripts/ensure-cli-startup-build.mjs"]',
+    expect(source).toMatch(
+      /spawnSync\(\s*process\.execPath,\s*\[\s*"--import",\s*"tsx",\s*"scripts\/ensure-cli-startup-build\.mts"\s*\]/u,
     );
-    expect(source.indexOf("scripts/ensure-cli-startup-build.mjs")).toBeLessThan(
+    expect(source.indexOf("scripts/ensure-cli-startup-build.mts")).toBeLessThan(
       source.indexOf("scripts/bench-cli-startup.ts"),
     );
+  });
+
+  it("reuses warmed state for gateway health while isolating first-device samples", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-state-scope-test-"));
+    try {
+      const fixturePath = path.join(tmpDir, "record-home.mjs");
+      const homeLogPath = path.join(tmpDir, "homes.log");
+      fs.writeFileSync(
+        fixturePath,
+        [
+          'import { appendFileSync } from "node:fs";',
+          "appendFileSync(process.env.OPENCLAW_BENCH_HOME_LOG, `${process.env.HOME}\\n`);",
+          "console.log('{\"ok\":true}');",
+          "",
+        ].join("\n"),
+      );
+
+      const runCase = (caseId: string) => {
+        fs.rmSync(homeLogPath, { force: true });
+        const reportPath = path.join(tmpDir, `${caseId}.json`);
+        execFileSync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            "scripts/bench-cli-startup.ts",
+            "--entry",
+            fixturePath,
+            "--case",
+            caseId,
+            "--runs",
+            "2",
+            "--warmup",
+            "1",
+            "--output",
+            reportPath,
+          ],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              OPENCLAW_BENCH_HOME_LOG: homeLogPath,
+            },
+            stdio: "pipe",
+          },
+        );
+        return {
+          homes: fs.readFileSync(homeLogPath, "utf8").trim().split("\n"),
+          report: JSON.parse(fs.readFileSync(reportPath, "utf8")),
+        };
+      };
+
+      const warmed = runCase("gatewayHealthJsonConnected");
+      const warmedHomes = warmed.homes;
+      expect(warmedHomes).toHaveLength(3);
+      expect(new Set(warmedHomes).size).toBe(1);
+      expect(warmedHomes.every((home) => !fs.existsSync(home))).toBe(true);
+      const warmedCase = warmed.report.primary.cases[0];
+      expect(warmedCase.warmupSamples).toHaveLength(1);
+      expect(warmedCase.samples).toHaveLength(2);
+      for (const sample of [...warmedCase.warmupSamples, ...warmedCase.samples]) {
+        expect(new Date(sample.startedAt).toISOString()).toBe(sample.startedAt);
+        expect(new Date(sample.endedAt).toISOString()).toBe(sample.endedAt);
+        expect(Date.parse(sample.endedAt)).toBeGreaterThanOrEqual(Date.parse(sample.startedAt));
+      }
+
+      for (const caseId of ["gatewayHealthJson", "gatewayHealthJsonFirstDevice"]) {
+        const sampleHomes = runCase(caseId).homes;
+        expect(sampleHomes).toHaveLength(3);
+        expect(new Set(sampleHomes).size).toBe(3);
+        expect(sampleHomes.every((home) => !fs.existsSync(home))).toBe(true);
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("requires connected gateway health probes to exit successfully", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-connected-test-"));
+    try {
+      const fixturePath = path.join(tmpDir, "transport-error.mjs");
+      fs.writeFileSync(
+        fixturePath,
+        [
+          'console.log(\'{"ok":false,"gateway_transport_error":"closed"}\');',
+          "process.exitCode = 1;",
+          "",
+        ].join("\n"),
+      );
+
+      const runCase = (caseId: string) =>
+        spawnSync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            "scripts/bench-cli-startup.ts",
+            "--entry",
+            fixturePath,
+            "--case",
+            caseId,
+            "--runs",
+            "1",
+            "--warmup",
+            "0",
+          ],
+          { cwd: process.cwd(), encoding: "utf8" },
+        );
+
+      expect(runCase("gatewayHealthJson").status).toBe(0);
+      for (const caseId of ["gatewayHealthJsonConnected", "gatewayHealthJsonFirstDevice"]) {
+        const result = runCase(caseId);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`${caseId} sample 1: exited with code 1`);
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("does not require unrelated fixture cases for a narrowed preset", () => {
@@ -39,6 +158,7 @@ describe("CLI startup benchmark script spawners", () => {
       const baselinePath = path.join(tmpDir, "baseline.json");
       const reportPath = path.join(tmpDir, "current.json");
       const makeCase = (id: string, name: string) => ({
+        contract: null,
         id,
         name,
         samples: [{ ms: 10, firstOutputMs: 5, maxRssMb: 10, exitCode: 0, signal: null }],
@@ -64,7 +184,9 @@ describe("CLI startup benchmark script spawners", () => {
         execFileSync(
           process.execPath,
           [
-            "scripts/test-cli-startup-bench-budget.mjs",
+            "--import",
+            "tsx",
+            "scripts/test-cli-startup-bench-budget.mts",
             "--baseline",
             baselinePath,
             "--report",
@@ -80,7 +202,9 @@ describe("CLI startup benchmark script spawners", () => {
         execFileSync(
           process.execPath,
           [
-            "scripts/test-cli-startup-bench-budget.mjs",
+            "--import",
+            "tsx",
+            "scripts/test-cli-startup-bench-budget.mts",
             "--baseline",
             baselinePath,
             "--report",
@@ -98,6 +222,163 @@ describe("CLI startup benchmark script spawners", () => {
           },
         ),
       ).toThrow();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects narrowed preset reports with no matching current cases", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-budget-empty-test-"));
+    try {
+      const baselinePath = path.join(tmpDir, "baseline.json");
+      const reportPath = path.join(tmpDir, "current.json");
+      fs.writeFileSync(
+        baselinePath,
+        JSON.stringify({
+          primary: {
+            cases: [
+              {
+                id: "gatewayStatusJson",
+                name: "gateway status --json",
+                samples: [{ ms: 10, firstOutputMs: 5, maxRssMb: 10, exitCode: 0, signal: null }],
+                summary: {
+                  durationMs: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+                  firstOutputMs: { avg: 5, p50: 5, p95: 5, min: 5, max: 5 },
+                  maxRssMb: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+                },
+              },
+            ],
+          },
+        }),
+      );
+      fs.writeFileSync(reportPath, JSON.stringify({ primary: { cases: [] } }));
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
+          "--baseline",
+          baselinePath,
+          "--report",
+          reportPath,
+          "--preset",
+          "real",
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "[test-cli-startup-bench-budget] current report has no cases for preset real",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects narrowed preset reports with unrelated current cases when baseline checks run", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-budget-overlap-test-"));
+    try {
+      const baselinePath = path.join(tmpDir, "baseline.json");
+      const reportPath = path.join(tmpDir, "current.json");
+      const makeCase = (id: string, name: string) => ({
+        id,
+        name,
+        samples: [{ ms: 10, firstOutputMs: 5, maxRssMb: 10, exitCode: 0, signal: null }],
+        summary: {
+          durationMs: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+          firstOutputMs: { avg: 5, p50: 5, p95: 5, min: 5, max: 5 },
+          maxRssMb: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+        },
+      });
+
+      fs.writeFileSync(
+        baselinePath,
+        JSON.stringify({ primary: { cases: [makeCase("fixtureOnly", "fixture only")] } }),
+      );
+      fs.writeFileSync(
+        reportPath,
+        JSON.stringify({ primary: { cases: [makeCase("targetOnly", "target only")] } }),
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
+          "--baseline",
+          baselinePath,
+          "--report",
+          reportPath,
+          "--preset",
+          "real",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            OPENCLAW_STARTUP_BENCH_ENFORCE_NONCANONICAL_ARCH: "1",
+          },
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "[test-cli-startup-bench-budget] no current cases matched the baseline for preset real",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows skip-baseline reports without fixture case overlap", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-budget-skip-test-"));
+    try {
+      const baselinePath = path.join(tmpDir, "baseline.json");
+      const reportPath = path.join(tmpDir, "current.json");
+      const makeCase = (id: string, name: string) => ({
+        id,
+        name,
+        samples: [{ ms: 10, firstOutputMs: 5, maxRssMb: 10, exitCode: 0, signal: null }],
+        summary: {
+          durationMs: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+          firstOutputMs: { avg: 5, p50: 5, p95: 5, min: 5, max: 5 },
+          maxRssMb: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+        },
+      });
+
+      fs.writeFileSync(
+        baselinePath,
+        JSON.stringify({ primary: { cases: [makeCase("fixtureOnly", "fixture only")] } }),
+      );
+      fs.writeFileSync(
+        reportPath,
+        JSON.stringify({ primary: { cases: [makeCase("targetOnly", "target only")] } }),
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
+          "--baseline",
+          baselinePath,
+          "--report",
+          reportPath,
+          "--preset",
+          "real",
+          "--skip-baseline",
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain("no current cases matched the baseline");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -150,7 +431,9 @@ describe("CLI startup benchmark script spawners", () => {
         [
           "--import",
           archShimPath,
-          "scripts/test-cli-startup-bench-budget.mjs",
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
           "--baseline",
           baselinePath,
           "--report",
@@ -172,17 +455,16 @@ describe("CLI startup benchmark script spawners", () => {
           exitBudgetMs: 1,
         },
       };
-      fs.writeFileSync(
-        baselinePath,
-        JSON.stringify({ primary: { cases: [slowResponseCase] } }),
-      );
+      fs.writeFileSync(baselinePath, JSON.stringify({ primary: { cases: [slowResponseCase] } }));
       fs.writeFileSync(reportPath, JSON.stringify({ primary: { cases: [slowResponseCase] } }));
       const responseBudgetResult = spawnSync(
         process.execPath,
         [
           "--import",
           archShimPath,
-          "scripts/test-cli-startup-bench-budget.mjs",
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
           "--baseline",
           baselinePath,
           "--report",
@@ -201,7 +483,9 @@ describe("CLI startup benchmark script spawners", () => {
         [
           "--import",
           archShimPath,
-          "scripts/test-cli-startup-bench-budget.mjs",
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
           "--baseline",
           baselinePath,
           "--report",
@@ -218,15 +502,119 @@ describe("CLI startup benchmark script spawners", () => {
     }
   });
 
+  it("fails reused reports with timed-out samples", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-budget-timeout-test-"));
+    try {
+      const baselinePath = path.join(tmpDir, "baseline.json");
+      const reportPath = path.join(tmpDir, "current.json");
+      const timedOutCase = {
+        contract: {
+          firstOutputBudgetMs: 1000,
+          exitBudgetMs: 2000,
+        },
+        id: "version",
+        name: "--version",
+        samples: [
+          {
+            ms: 10,
+            firstOutputMs: 5,
+            maxRssMb: 10,
+            exitCode: null,
+            signal: null,
+            timedOut: true,
+          },
+        ],
+        summary: {
+          durationMs: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+          firstOutputMs: { avg: 5, p50: 5, p95: 5, min: 5, max: 5 },
+          maxRssMb: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+        },
+      };
+      fs.writeFileSync(baselinePath, JSON.stringify({ primary: { cases: [timedOutCase] } }));
+      fs.writeFileSync(reportPath, JSON.stringify({ primary: { cases: [timedOutCase] } }));
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
+          "--baseline",
+          baselinePath,
+          "--report",
+          reportPath,
+          "--skip-baseline",
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("[test-cli-startup-bench-budget] --version timed out.");
+      expect(result.stderr).toContain(
+        "[test-cli-startup-bench-budget] --version exited timeout; response contract requires a clean exit.",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails reused reports with missing RSS samples", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-bench-budget-rss-test-"));
+    try {
+      const baselinePath = path.join(tmpDir, "baseline.json");
+      const reportPath = path.join(tmpDir, "current.json");
+      const missingRssCase = {
+        contract: null,
+        id: "version",
+        name: "--version",
+        samples: [{ ms: 10, firstOutputMs: 5, maxRssMb: null, exitCode: 0, signal: null }],
+        summary: {
+          durationMs: { avg: 10, p50: 10, p95: 10, min: 10, max: 10 },
+          firstOutputMs: { avg: 5, p50: 5, p95: 5, min: 5, max: 5 },
+          maxRssMb: null,
+        },
+      };
+      fs.writeFileSync(baselinePath, JSON.stringify({ primary: { cases: [missingRssCase] } }));
+      fs.writeFileSync(reportPath, JSON.stringify({ primary: { cases: [missingRssCase] } }));
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "scripts/test-cli-startup-bench-budget.mts",
+          "--baseline",
+          baselinePath,
+          "--report",
+          reportPath,
+          "--skip-baseline",
+        ],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "[test-cli-startup-bench-budget] --version did not report max RSS.",
+      );
+      expect(result.stderr).not.toContain("current report has no cases");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects malformed startup budget env vars before reading reports", () => {
-    const result = spawnSync(process.execPath, ["scripts/test-cli-startup-bench-budget.mjs"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        OPENCLAW_STARTUP_BENCH_MAX_RSS_REGRESSION_PCT: "20pct",
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "scripts/test-cli-startup-bench-budget.mts"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          OPENCLAW_STARTUP_BENCH_MAX_RSS_REGRESSION_PCT: "20pct",
+        },
       },
-    });
+    );
 
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
@@ -239,7 +627,13 @@ describe("CLI startup benchmark script spawners", () => {
   it("rejects malformed startup budget CLI values before reading reports", () => {
     const malformed = spawnSync(
       process.execPath,
-      ["scripts/test-cli-startup-bench-budget.mjs", "--max-duration-regression-pct", "1e2ms"],
+      [
+        "--import",
+        "tsx",
+        "scripts/test-cli-startup-bench-budget.mts",
+        "--max-duration-regression-pct",
+        "1e2ms",
+      ],
       { cwd: process.cwd(), encoding: "utf8" },
     );
     expect(malformed.status).toBe(1);
@@ -251,7 +645,12 @@ describe("CLI startup benchmark script spawners", () => {
 
     const missing = spawnSync(
       process.execPath,
-      ["scripts/test-cli-startup-bench-budget.mjs", "--max-first-output-regression-pct"],
+      [
+        "--import",
+        "tsx",
+        "scripts/test-cli-startup-bench-budget.mts",
+        "--max-first-output-regression-pct",
+      ],
       { cwd: process.cwd(), encoding: "utf8" },
     );
     expect(missing.status).toBe(1);
