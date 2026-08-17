@@ -44,6 +44,8 @@ const STATIC_AGENT_RUNTIME_BASE_TARGET_IDS = [
   "agents.entries.*.tts.providers.*.apiKey",
   "tts.providers.*.apiKey",
   "skills.entries.*.apiKey",
+  "mcp.servers.*.env.*",
+  "mcp.servers.*.headers.*",
 ] as const;
 const STATIC_MEMORY_EMBEDDING_TARGET_IDS = [
   ...STATIC_MODEL_TARGET_IDS,
