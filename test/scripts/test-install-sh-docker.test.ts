@@ -953,12 +953,15 @@ printf 'status=%s\\n' "$status"
     expect(script).not.toContain("docker run --rm -t \\");
   });
 
-  it("rejects stale non-root smoke Node runtimes below the runtime floor", () => {
-    const result = runNonrootNodePreflight("22.22.2");
+  it.each(["22.22.2", "22.23.3", "23.11.0", "24.22.0", "25.9.0", "26.12.0"])(
+    "rejects stale non-root smoke Node %s below the runtime floor",
+    (version) => {
+      const result = runNonrootNodePreflight(version);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("unsupported node 22.22.2");
-  });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`unsupported node ${version}`);
+    },
+  );
 
   it("rejects non-root smoke Node runtimes without node:sqlite", () => {
     const result = runNonrootNodePreflight("22.23.4", { sqlite: false });
@@ -968,15 +971,15 @@ printf 'status=%s\\n' "$status"
   });
 
   it("rejects non-root smoke Node runtimes with vulnerable system SQLite", () => {
-    const result = runNonrootNodePreflight("24.17.0", { sqliteVersion: "3.51.2" });
+    const result = runNonrootNodePreflight("24.22.1", { sqliteVersion: "3.51.2" });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("unsupported node 24.17.0: unsafe SQLite 3.51.2");
+    expect(result.stderr).toContain("unsupported node 24.22.1: unsafe SQLite 3.51.2");
   });
 
   it("accepts non-root smoke Node runtimes that match the installer runtime floor", () => {
     expect(runNonrootNodePreflight("22.23.4").status).toBe(0);
-    expect(runNonrootNodePreflight("24.16.0").status).toBe(0);
+    expect(runNonrootNodePreflight("24.22.1").status).toBe(0);
     expect(runNonrootNodePreflight("26.12.1").status).toBe(0);
   });
 

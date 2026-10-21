@@ -1624,7 +1624,7 @@ describe("package acceptance workflow", () => {
       "${{ inputs.crabbox_job != 'hydrate-github' && inputs.crabbox_job != 'hydrate-windows-daemon' }}",
     );
     expect(workflowStep(hydrate, "Setup Node.js").uses).toBe(SETUP_NODE_V6);
-    expect(workflowStep(hydrate, "Setup Node.js").with?.["node-version"]).toBe("24");
+    expect(workflowStep(hydrate, "Setup Node.js").with?.["node-version"]).toBe("24.22.1");
     const hydratePnpm = workflowStep(hydrate, "Setup pnpm and dependencies");
     expect(hydratePnpm.if).toBeUndefined();
     expect(hydratePnpm.run).toContain('corepack enable --install-directory "$PNPM_HOME"');
@@ -6461,7 +6461,7 @@ wait_for_run plugin-clawhub-new.yml 123 "${expectedSha}" || status=$?
 
     for (const workflowPath of releaseWorkflowPaths) {
       const workflow = readWorkflow(workflowPath);
-      expect(workflow.env?.NODE_VERSION, workflowPath).toBe("24.16.0");
+      expect(workflow.env?.NODE_VERSION, workflowPath).toBe("24.22.1");
       expect(workflow.env?.PNPM_VERSION, workflowPath).toBeUndefined();
     }
 
