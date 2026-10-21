@@ -162,7 +162,7 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 
 ## Commands
 
-- Runtime: Node 22.22.3+, 24.15+, or 25.9+; Node 26 recommended (CI and release workflows still pin Node 24). Keep Node + Bun paths working.
+- Runtime: Node 22.23.4+, 24.22.1+, or 26.12.1+; Node 26 recommended (CI and release workflows still pin Node 24). Keep Node + Bun paths working.
 - Package manager/runtime: repo defaults only. No swaps without approval.
 - Install: `pnpm install` (keep Bun lock/patches aligned if touched). Trusted development installs and validation run locally by default.
 - CLI: `pnpm openclaw ...` or `pnpm dev`; build: `pnpm build`.

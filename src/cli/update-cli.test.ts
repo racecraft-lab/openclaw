@@ -6007,10 +6007,10 @@ describe("update-cli", () => {
     vi.mocked(fetchNpmPackageTargetStatus).mockResolvedValue({
       target: "latest",
       version: "2026.7.1",
-      nodeEngine: ">=24.15.0 <25",
+      nodeEngine: ">=24.22.1 <25",
     });
     nodeVersionSatisfiesEngine.mockImplementation(
-      (version: string | null) => version === "24.15.0",
+      (version: string | null) => version === "24.22.1",
     );
     mockFileBackedPathExists();
     vi.mocked(runCommandWithTimeout).mockImplementation(async (argv) => {
@@ -6018,7 +6018,7 @@ describe("update-cli", () => {
         return commandResult({ stdout: "v24.14.0\n" });
       }
       if (Array.isArray(argv) && argv[0] === process.execPath && argv[1] === "--version") {
-        return commandResult({ stdout: "v24.15.0\n" });
+        return commandResult({ stdout: "v24.22.1\n" });
       }
       if (
         Array.isArray(argv) &&

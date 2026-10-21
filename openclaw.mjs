@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { isSupportedOpenClawNodeVersion } from "./node-version.mjs";
 
 const RECOMMENDED_NODE_MAJOR = 26;
-const SUPPORTED_NODE_RANGE = ">=22.22.3 <23, >=24.15.0 <25, or >=25.9.0";
+const SUPPORTED_NODE_RANGE = ">=22.23.4 <23, >=24.22.1 <25, or >=26.12.1";
 const COMPILE_CACHE_DISABLED_RESPAWNED_ENV = "OPENCLAW_COMPILE_CACHE_DISABLED_RESPAWNED";
 
 const ensureSupportedRuntimeVersion = () => {

@@ -189,7 +189,7 @@ async function resolveCliProgramArguments(params: {
 
   if (!params.nodePath?.trim()) {
     throw new Error(
-      "No supported Node runtime was selected for the daemon. Install Node 24.15+ (recommended) or Node 22 LTS (22.22.3+), then retry.",
+      "No supported Node runtime was selected for the daemon. Install Node 24.22.1+ (recommended) or Node 22 LTS (22.23.4+), then retry.",
     );
   }
   const nodePath = params.nodePath;

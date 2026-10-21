@@ -961,10 +961,10 @@ printf 'status=%s\\n' "$status"
   });
 
   it("rejects non-root smoke Node runtimes without node:sqlite", () => {
-    const result = runNonrootNodePreflight("22.22.3", { sqlite: false });
+    const result = runNonrootNodePreflight("22.23.4", { sqlite: false });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("unsupported node 22.22.3: missing node:sqlite");
+    expect(result.stderr).toContain("unsupported node 22.23.4: missing node:sqlite");
   });
 
   it("rejects non-root smoke Node runtimes with vulnerable system SQLite", () => {
@@ -975,9 +975,9 @@ printf 'status=%s\\n' "$status"
   });
 
   it("accepts non-root smoke Node runtimes that match the installer runtime floor", () => {
-    expect(runNonrootNodePreflight("22.22.3").status).toBe(0);
+    expect(runNonrootNodePreflight("22.23.4").status).toBe(0);
     expect(runNonrootNodePreflight("24.16.0").status).toBe(0);
-    expect(runNonrootNodePreflight("25.9.0").status).toBe(0);
+    expect(runNonrootNodePreflight("26.12.1").status).toBe(0);
   });
 
   it("runs the root Dockerfile build with the CI heap limit", () => {

@@ -138,9 +138,9 @@ describe("bundled plugin postinstall", () => {
       const configuredCacheRoot = path.join(packageRoot, "configured-node-cache");
       const defaultCacheRoot = path.join(temporaryRoot, "node-compile-cache");
       const sentinels = [
-        path.join(defaultCacheRoot, "v22.22.3-x64-another-app", "keep.txt"),
-        path.join(defaultCacheRoot, "v24.15.0-x64-other-install", "keep.txt"),
-        path.join(configuredCacheRoot, "v25.9.0-x64-another-app", "keep.txt"),
+        path.join(defaultCacheRoot, "v22.23.4-x64-another-app", "keep.txt"),
+        path.join(defaultCacheRoot, "v24.22.1-x64-other-install", "keep.txt"),
+        path.join(configuredCacheRoot, "v26.12.1-x64-another-app", "keep.txt"),
         path.join(configuredCacheRoot, "v26.4.0-x64-other-install", "keep.txt"),
       ];
 

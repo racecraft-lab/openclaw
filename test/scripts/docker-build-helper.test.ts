@@ -4518,7 +4518,7 @@ source "$ROOT_DIR/scripts/lib/docker-e2e-logs.sh"
       "bash /tmp/openclaw-source/scripts/install-cli.sh",
       "--install-method git",
       "--prefix /tmp/openclaw-prefix",
-      "--node-version 24.15.0",
+      "--node-version 24.22.1",
       "apt-get install -y --no-install-recommends curl",
       "command -v curl >/dev/null",
       'chmod 0555 "$SOURCE_PROOF_SCRIPT"',

@@ -12,7 +12,7 @@ describe("runtime-guard", () => {
   it("parses semver with or without leading v", () => {
     expect(parseSemver("v22.1.3")).toEqual({ major: 22, minor: 1, patch: 3 });
     expect(parseSemver("1.3.0")).toEqual({ major: 1, minor: 3, patch: 0 });
-    expect(parseSemver("22.22.3-beta.1")).toEqual({ major: 22, minor: 22, patch: 3 });
+    expect(parseSemver("22.23.4-beta.1")).toEqual({ major: 22, minor: 23, patch: 4 });
     expect(parseSemver("invalid")).toBeNull();
   });
 
@@ -32,41 +32,41 @@ describe("runtime-guard", () => {
   });
 
   it("checks node versions against simple engine ranges", () => {
-    expect(nodeVersionSatisfiesEngine("22.22.3", ">=22.22.3")).toBe(true);
-    expect(nodeVersionSatisfiesEngine("22.22.2", ">=22.22.3")).toBe(false);
-    expect(nodeVersionSatisfiesEngine("24.15.0", ">=22.22.3")).toBe(true);
-    expect(nodeVersionSatisfiesEngine("22.22.3", "^22.22.3")).toBeNull();
+    expect(nodeVersionSatisfiesEngine("22.23.4", ">=22.23.4")).toBe(true);
+    expect(nodeVersionSatisfiesEngine("22.22.2", ">=22.23.4")).toBe(false);
+    expect(nodeVersionSatisfiesEngine("24.22.1", ">=22.23.4")).toBe(true);
+    expect(nodeVersionSatisfiesEngine("22.23.4", "^22.23.4")).toBeNull();
   });
 
   it("checks node versions against the supported engine range", () => {
-    const engine = ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0";
-    expect(nodeVersionSatisfiesEngine("22.22.3", engine)).toBe(true);
+    const engine = ">=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1";
+    expect(nodeVersionSatisfiesEngine("22.23.4", engine)).toBe(true);
     expect(nodeVersionSatisfiesEngine("22.22.2", engine)).toBe(false);
     expect(nodeVersionSatisfiesEngine("23.11.0", engine)).toBe(false);
     expect(nodeVersionSatisfiesEngine("24.14.1", engine)).toBe(false);
-    expect(nodeVersionSatisfiesEngine("24.15.0", engine)).toBe(true);
+    expect(nodeVersionSatisfiesEngine("24.22.1", engine)).toBe(true);
     expect(nodeVersionSatisfiesEngine("25.8.1", engine)).toBe(false);
-    expect(nodeVersionSatisfiesEngine("25.9.0", engine)).toBe(true);
-    expect(nodeVersionSatisfiesEngine("26.0.0", engine)).toBe(true);
+    expect(nodeVersionSatisfiesEngine("26.12.1", engine)).toBe(true);
+    expect(nodeVersionSatisfiesEngine("26.0.0", engine)).toBe(false);
     expect(nodeVersionSatisfiesEngine(null, engine)).toBe(false);
     expect(nodeVersionSatisfiesEngine("unknown", engine)).toBe(false);
   });
 
   it.each([
-    ["22.22.3", true],
-    ["22.22.2", false],
+    ["22.23.4", true],
+    ["22.23.3", false],
     ["23.11.0", false],
-    ["24.14.1", false],
-    ["24.15.0", true],
-    ["25.8.1", false],
-    ["25.9.0", true],
-    ["26.0.0", true],
-    ["24.15.0+local.1", true],
-    ["24.15.0-rc.1", false],
+    ["24.22.0", false],
+    ["24.22.1", true],
+    ["25.9.0", false],
+    ["26.12.1", true],
+    ["26.12.0", false],
+    ["24.22.1+local.1", true],
+    ["24.22.1-rc.1", false],
     ["25.9.1-nightly.20260714", false],
     ["24.15", false],
-    ["garbage24.15.0suffix", false],
-    ["24.15.0suffix", false],
+    ["garbage24.22.1suffix", false],
+    ["24.22.1suffix", false],
     [null, false],
   ] as const)("classifies supported Node version %s", (version, expected) => {
     expect(isSupportedNodeVersion(version)).toBe(expected);
@@ -91,7 +91,7 @@ describe("runtime-guard", () => {
     expect(runtime.error).toHaveBeenCalledOnce();
     expect(runtime.error).toHaveBeenCalledWith(
       [
-        "openclaw requires Node >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0.",
+        "openclaw requires Node >=22.23.4 <23, >=24.22.1 <25, or >=26.12.1.",
         "Detected: node 20.0.0 (exec: /usr/bin/node).",
         "PATH searched: /usr/bin",
         "Install Node: https://nodejs.org/en/download",
@@ -109,7 +109,7 @@ describe("runtime-guard", () => {
     };
     const details = {
       kind: "node" as const,
-      version: "22.22.3",
+      version: "22.23.4",
       execPath: "/usr/bin/node",
       pathEnv: "/usr/bin",
       hasNodeSqlite: true,
@@ -184,7 +184,7 @@ describe("runtime-guard", () => {
     expect(runtime.error).toHaveBeenCalledOnce();
     expect(runtime.error).toHaveBeenCalledWith(
       [
-        "openclaw requires Node >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0.",
+        "openclaw requires Node >=22.23.4 <23, >=24.22.1 <25, or >=26.12.1.",
         "Detected: unknown runtime (exec: unknown).",
         "PATH searched: (not set)",
         "Install Node: https://nodejs.org/en/download",

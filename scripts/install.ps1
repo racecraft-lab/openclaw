@@ -274,15 +274,15 @@ function Test-NodeVersionSupported {
         return $false
     }
     if ($major -eq 22) {
-        return ($minor -gt 22 -or ($minor -eq 22 -and $patch -ge 3))
+        return ($minor -gt 23 -or ($minor -eq 23 -and $patch -ge 4))
     }
     if ($major -eq 24) {
-        return ($minor -ge 15)
+        return ($minor -gt 22 -or ($minor -eq 22 -and $patch -ge 1))
     }
-    if ($major -eq 25) {
-        return ($minor -ge 9)
+    if ($major -eq 26) {
+        return ($minor -gt 12 -or ($minor -eq 12 -and $patch -ge 1))
     }
-    return ($major -gt 25)
+    return ($major -gt 26)
 }
 
 function Test-NodeSqliteSupported {
@@ -338,7 +338,7 @@ function Check-Node {
                 Write-Host "[!] Node.js $nodeVersion uses SQLite $sqliteVersionLabel; SQLite 3.51.3+, 3.50.7+ within 3.50.x, or 3.44.6+ within 3.44.x is required" -ForegroundColor Yellow
                 return $false
             } else {
-                Write-Host "[!] Node.js $nodeVersion found, but Node 22.22.3+, Node 24.15.0+, or Node 25.9.0+ is required" -ForegroundColor Yellow
+                Write-Host "[!] Node.js $nodeVersion found, but Node 22.23.4+, Node 24.22.1+, or Node 26.12.1+ is required" -ForegroundColor Yellow
                 return $false
             }
         }

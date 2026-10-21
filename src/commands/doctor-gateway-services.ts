@@ -638,7 +638,7 @@ export async function maybeRepairGatewayServiceConfig(
       note(warning, "Gateway runtime");
     } else {
       note(
-        "System Node 22 LTS (22.22.3+) or Node 24.15+ not found. Install via Homebrew/apt/choco and rerun doctor to migrate off Bun/version managers.",
+        "System Node 22 LTS (22.23.4+) or Node 24.22.1+ not found. Install via Homebrew/apt/choco and rerun doctor to migrate off Bun/version managers.",
         "Gateway runtime",
       );
     }

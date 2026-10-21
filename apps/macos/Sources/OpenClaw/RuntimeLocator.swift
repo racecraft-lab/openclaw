@@ -55,10 +55,10 @@ enum RuntimeLocator {
     private static let logger = Logger(subsystem: "ai.openclaw", category: "runtime")
     // Keep these floors aligned with package.json engines so the app never launches
     // the gateway on an unsupported odd release or an older even-major runtime.
-    private static let minNode22 = RuntimeVersion(major: 22, minor: 22, patch: 3)
-    private static let minNode24 = RuntimeVersion(major: 24, minor: 15, patch: 0)
-    private static let minNode25 = RuntimeVersion(major: 25, minor: 9, patch: 0)
-    private static let supportedNodeRange = ">=22.22.3 <23, >=24.15.0 <25, or >=25.9.0"
+    private static let minNode22 = RuntimeVersion(major: 22, minor: 23, patch: 4)
+    private static let minNode24 = RuntimeVersion(major: 24, minor: 22, patch: 1)
+    private static let minNode26 = RuntimeVersion(major: 26, minor: 12, patch: 1)
+    private static let supportedNodeRange = ">=22.23.4 <23, >=24.22.1 <25, or >=26.12.1"
 
     static func isSupportedNodeVersion(_ version: RuntimeVersion) -> Bool {
         if version.major == self.minNode22.major {
@@ -67,10 +67,10 @@ enum RuntimeLocator {
         if version.major == self.minNode24.major {
             return version >= self.minNode24
         }
-        if version.major == self.minNode25.major {
-            return version >= self.minNode25
+        if version.major == self.minNode26.major {
+            return version >= self.minNode26
         }
-        return version.major > self.minNode25.major
+        return version.major > self.minNode26.major
     }
 
     static func resolve(

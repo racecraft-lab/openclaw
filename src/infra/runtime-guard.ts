@@ -190,7 +190,7 @@ export function assertSupportedRuntime(
   const requirement =
     details.kind === "bun"
       ? "openclaw cannot run under Bun because the runtime does not provide node:sqlite."
-      : "openclaw requires Node >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0.";
+      : "openclaw requires Node >=22.23.4 <23, >=24.22.1 <25, or >=26.12.1.";
   const retryHint =
     details.kind === "bun"
       ? "Run OpenClaw with Node; Bun remains supported for installs and package scripts."

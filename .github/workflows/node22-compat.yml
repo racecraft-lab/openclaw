@@ -21,13 +21,13 @@ jobs:
       - name: Setup Node environment
         uses: ./.github/actions/setup-node-env
         with:
-          node-version: "22.22.3"
+          node-version: "22.23.4"
           install-bun: "false"
 
       - name: Resolve trusted declaration cache artifact
         id: declaration_cache
         env:
-          ARTIFACT_NAME: build-all-cache-v1-Linux-X64-node-22.22.3
+          ARTIFACT_NAME: build-all-cache-v1-Linux-X64-node-22.23.4
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
@@ -115,7 +115,7 @@ jobs:
           compression-level: 1
           if-no-files-found: error
           include-hidden-files: true
-          name: build-all-cache-v1-${{ runner.os }}-${{ runner.arch }}-node-22.22.3
+          name: build-all-cache-v1-${{ runner.os }}-${{ runner.arch }}-node-22.23.4
           overwrite: true
           path: .artifacts/build-all-cache
           retention-days: 14

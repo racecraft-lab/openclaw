@@ -691,7 +691,7 @@ function parsePreflight(
     result.stdout.includes(NODE_UNSUPPORTED_MARKER)
   ) {
     throw new Error(
-      "Worker bootstrap requires Node 22.22.3+, 24.15.0+, or 25.9.0+ with WAL-reset-safe SQLite on the leased host; install a supported Node runtime in the provider setup phase and retry",
+      "Worker bootstrap requires Node 22.23.4+, 24.22.1+, or 26.12.1+ with WAL-reset-safe SQLite on the leased host; install a supported Node runtime in the provider setup phase and retry",
     );
   }
   if (!isSuccess(result)) {

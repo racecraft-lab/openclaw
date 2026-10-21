@@ -16,7 +16,7 @@ struct RuntimeLocatorTests {
     @Test func `resolve succeeds with valid node`() async throws {
         let script = """
         #!/bin/sh
-        echo v22.22.3
+        echo v22.23.4
         """
         let node = try self.makeTempExecutable(contents: script)
         let result = await RuntimeLocator.resolve(searchPaths: [node.deletingLastPathComponent().path])
@@ -25,14 +25,14 @@ struct RuntimeLocatorTests {
             return
         }
         #expect(res.path == node.path)
-        #expect(res.version == RuntimeVersion(major: 22, minor: 22, patch: 3))
+        #expect(res.version == RuntimeVersion(major: 22, minor: 23, patch: 4))
     }
 
     @Test func `runtime version probe tolerates loaded host delay`() async throws {
         let script = """
         #!/bin/sh
         /bin/sleep 2.1
-        echo v22.22.3
+        echo v22.23.4
         """
         let node = try self.makeTempExecutable(contents: script)
         let result = await RuntimeLocator.resolve(searchPaths: [node.deletingLastPathComponent().path])
@@ -40,7 +40,7 @@ struct RuntimeLocatorTests {
             Issue.record("Expected delayed version probe to succeed, got \(result)")
             return
         }
-        #expect(resolution.version == RuntimeVersion(major: 22, minor: 22, patch: 3))
+        #expect(resolution.version == RuntimeVersion(major: 22, minor: 23, patch: 4))
     }
 
     @Test func `resolve fails on boundary below minimum`() async throws {
@@ -74,14 +74,14 @@ struct RuntimeLocatorTests {
     }
 
     @Test(arguments: [
-        ("22.22.2", false),
-        ("22.22.3", true),
+        ("22.23.3", false),
+        ("22.23.4", true),
         ("23.11.0", false),
-        ("24.14.1", false),
-        ("24.15.0", true),
-        ("25.8.1", false),
-        ("25.9.0", true),
-        ("26.0.0", true),
+        ("24.22.0", false),
+        ("24.22.1", true),
+        ("25.9.0", false),
+        ("26.12.1", true),
+        ("26.12.0", false),
     ])
     func `node support matches the core runtime contract`(version: String, supported: Bool) throws {
         let parsed = try #require(RuntimeVersion.from(string: version))
@@ -120,7 +120,7 @@ struct RuntimeLocatorTests {
 
     @Test func `describe failure includes paths`() {
         let msg = RuntimeLocator.describeFailure(.notFound(searchPaths: ["/tmp/a", "/tmp/b"]))
-        #expect(msg.contains("Node >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0"))
+        #expect(msg.contains("Node >=22.23.4 <23, >=24.22.1 <25, or >=26.12.1"))
         #expect(msg.contains("PATH searched: /tmp/a:/tmp/b"))
 
         let parseMsg = RuntimeLocator.describeFailure(
@@ -129,7 +129,7 @@ struct RuntimeLocatorTests {
                 raw: "garbage",
                 path: "/usr/local/bin/node",
                 searchPaths: ["/usr/local/bin"]))
-        #expect(parseMsg.contains("Node >=22.22.3 <23, >=24.15.0 <25, or >=25.9.0"))
+        #expect(parseMsg.contains("Node >=22.23.4 <23, >=24.22.1 <25, or >=26.12.1"))
     }
 
     @Test func `runtime version parses with leading V and metadata`() {

@@ -49,7 +49,7 @@ function expectedUnsafeSqliteError(version: string, shared: boolean): string {
   const wording = shared ? "uses shared system" : "embeds";
   const remediation = shared
     ? "Upgrade the system SQLite library to one of those safe versions, or use a Node build embedding a safe version."
-    : "Upgrade to Node 22.22.3+, 24.15.0+, or 25.9.0+ before retrying.";
+    : "Upgrade to Node 22.23.4+, 24.22.1+, or 26.12.1+ before retrying.";
   return (
     "SQLite support is unavailable or unsafe in this Node runtime. " +
     "OpenClaw requires SQLite 3.51.3+, 3.50.7+ within 3.50.x, or 3.44.6+ within 3.44.x for WAL safety; " +

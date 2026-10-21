@@ -665,7 +665,7 @@ NODE
       apk() {
         printf 'apk:%s\\n' "$*"
         if [[ "$*" == *"nodejs-current"* ]]; then
-          NODE_FAKE_VERSION=v22.22.3
+          NODE_FAKE_VERSION=v22.23.4
         fi
       }
       node() {
@@ -1877,7 +1877,7 @@ NODE
     const tmp = mkdtempSync(join(tmpdir(), "openclaw-install-nvm-"));
     const home = join(tmp, "home");
     const systemBin = join(tmp, "system-bin");
-    const nvmBin = join(home, ".nvm/versions/node/v22.22.3/bin");
+    const nvmBin = join(home, ".nvm/versions/node/v22.23.4/bin");
     mkdirSync(systemBin, { recursive: true });
     mkdirSync(nvmBin, { recursive: true });
     mkdirSync(join(home, ".nvm"), { recursive: true });
@@ -1885,7 +1885,7 @@ NODE
     const systemNode = join(systemBin, "node");
     const nvmNode = join(nvmBin, "node");
     writeFileSync(systemNode, "#!/bin/sh\necho v8.11.3\n");
-    writeFileSync(nvmNode, "#!/bin/sh\necho v22.22.3\n");
+    writeFileSync(nvmNode, "#!/bin/sh\necho v22.23.4\n");
     chmodSync(systemNode, 0o755);
     chmodSync(nvmNode, 0o755);
     writeFileSync(
@@ -1895,7 +1895,7 @@ NODE
         "export NVM_DIR",
         "nvm() {",
         '  if [ "$1" = "use" ]; then',
-        '    export PATH="$NVM_DIR/versions/node/v22.22.3/bin:$PATH"',
+        '    export PATH="$NVM_DIR/versions/node/v22.23.4/bin:$PATH"',
         "    return 0",
         "  fi",
         "  return 0",
@@ -1932,7 +1932,7 @@ NODE
     const output = result?.stdout ?? "";
     expect(output).toContain("status=0");
     expect(output).toContain(`path=${nvmNode}`);
-    expect(output).toContain("version=v22.22.3");
+    expect(output).toContain("version=v22.23.4");
   });
 
   it("installs Homebrew lazily before macOS Git installs", () => {
@@ -1961,7 +1961,7 @@ NODE
     const staleNode = join(staleBin, "node");
     const supportedNode = join(supportedBin, "node");
     writeFileSync(staleNode, "#!/bin/sh\necho v20.20.0\n");
-    writeFileSync(supportedNode, "#!/bin/sh\necho v22.22.3\n");
+    writeFileSync(supportedNode, "#!/bin/sh\necho v22.23.4\n");
     chmodSync(staleNode, 0o755);
     chmodSync(supportedNode, 0o755);
 
@@ -2002,14 +2002,14 @@ NODE
     expect(output).toContain("promote=0");
     expect(output).toContain("active=0");
     expect(output).toContain(`path=${supportedNode}`);
-    expect(output).toContain("version=v22.22.3");
+    expect(output).toContain("version=v22.23.4");
   });
 
   it("mirrors the canonical release-label contract for existing Node runtimes", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
       engines?: { node?: string };
     };
-    expect(pkg.engines?.node).toBe(">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0");
+    expect(pkg.engines?.node).toBe(">=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1");
 
     const tmp = mkdtempSync(join(tmpdir(), "openclaw-install-node-floor-"));
     const bin = join(tmp, "bin");
@@ -2116,7 +2116,7 @@ NODE
       [
         "#!/usr/bin/env bash",
         'if [[ "${1:-}" == "-p" ]]; then echo "24 15"; exit 0; fi',
-        'if [[ "${1:-}" == "-v" ]]; then echo "v24.15.0"; exit 0; fi',
+        'if [[ "${1:-}" == "-v" ]]; then echo "v24.22.1"; exit 0; fi',
         "",
       ].join("\n"),
     );

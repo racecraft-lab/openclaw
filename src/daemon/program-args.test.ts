@@ -30,7 +30,7 @@ const originalArgv = [...process.argv];
 const originalExecPath = process.execPath;
 const validatedNodePath = "/opt/Validated Node/bin/node";
 const missingSelectedNodeError =
-  "No supported Node runtime was selected for the daemon. Install Node 24.15+ (recommended) or Node 22 LTS (22.22.3+), then retry.";
+  "No supported Node runtime was selected for the daemon. Install Node 24.22.1+ (recommended) or Node 22 LTS (22.23.4+), then retry.";
 
 afterEach(() => {
   process.argv = [...originalArgv];

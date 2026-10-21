@@ -21,13 +21,13 @@ NODE_DEFAULT_MAJOR=26
 # formula exists); versioned formulas only cover LTS lines like node@24.
 NODE_BREW_FORMULA="node"
 NODE_MIN_MAJOR=22
-NODE_22_MIN_MINOR=22
-NODE_22_MIN_PATCH=3
-NODE_24_MIN_MINOR=15
-NODE_24_MIN_PATCH=0
-NODE_25_MIN_MINOR=9
-NODE_25_MIN_PATCH=0
-NODE_SUPPORTED_VERSION_LABEL="22.22.3+, 24.15.0+, or 25.9.0+"
+NODE_22_MIN_MINOR=23
+NODE_22_MIN_PATCH=4
+NODE_24_MIN_MINOR=22
+NODE_24_MIN_PATCH=1
+NODE_26_MIN_MINOR=12
+NODE_26_MIN_PATCH=1
+NODE_SUPPORTED_VERSION_LABEL="22.23.4+, 24.22.1+, or 26.12.1+"
 
 ORIGINAL_PATH="${PATH:-}"
 
@@ -1625,12 +1625,12 @@ node_version_components_are_supported() {
             ((minor > NODE_24_MIN_MINOR)) ||
                 ((minor == NODE_24_MIN_MINOR && patch >= NODE_24_MIN_PATCH))
             ;;
-        25)
-            ((minor > NODE_25_MIN_MINOR)) ||
-                ((minor == NODE_25_MIN_MINOR && patch >= NODE_25_MIN_PATCH))
+        26)
+            ((minor > NODE_26_MIN_MINOR)) ||
+                ((minor == NODE_26_MIN_MINOR && patch >= NODE_26_MIN_PATCH))
             ;;
         *)
-            ((major > 25))
+            ((major > 26))
             ;;
     esac
 }

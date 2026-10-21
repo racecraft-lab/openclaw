@@ -242,7 +242,7 @@ export function renderSystemNodeWarning(
   }
   const selectedLabel = selectedNodePath ? ` Using ${selectedNodePath} for the daemon.` : "";
   if (systemNode.version === null) {
-    return `System Node at ${systemNode.path} is available, but its version could not be determined.${selectedLabel} Install Node 24.15+ (recommended) or Node 22.22.3+ from nodejs.org or Homebrew.`;
+    return `System Node at ${systemNode.path} is available, but its version could not be determined.${selectedLabel} Install Node 24.22.1+ (recommended) or Node 22.23.4+ from nodejs.org or Homebrew.`;
   }
   const versionLabel = systemNode.version;
   if (isSupportedNodeVersion(systemNode.version)) {
@@ -253,9 +253,9 @@ export function renderSystemNodeWarning(
         "Upgrade the system SQLite library to 3.51.3+ (or patched 3.50.7+/3.44.6+), or install a Node build that embeds a safe version."
       );
     }
-    return `System Node ${versionLabel} at ${systemNode.path} uses SQLite ${sqliteLabel}, which is not WAL-reset-safe.${selectedLabel} Install Node 24.15+ (recommended) or Node 22.22.3+ from nodejs.org or Homebrew.`;
+    return `System Node ${versionLabel} at ${systemNode.path} uses SQLite ${sqliteLabel}, which is not WAL-reset-safe.${selectedLabel} Install Node 24.22.1+ (recommended) or Node 22.23.4+ from nodejs.org or Homebrew.`;
   }
-  return `System Node ${versionLabel} at ${systemNode.path} is outside the supported range.${selectedLabel} Install Node 24.15+ (recommended) or Node 22.22.3+ from nodejs.org or Homebrew.`;
+  return `System Node ${versionLabel} at ${systemNode.path} is outside the supported range.${selectedLabel} Install Node 24.22.1+ (recommended) or Node 22.23.4+ from nodejs.org or Homebrew.`;
 }
 /** Resolves the Node binary the daemon should use for a node runtime. */
 export async function resolvePreferredNodePath(params: {

@@ -33,7 +33,7 @@ curl -fsSL https://openclaw.ai/install.sh | bash
 iwr -useb https://openclaw.ai/install.ps1 | iex
 ```
 
-Already manage Node.js? Install the published package instead (Node 22.22.3+, 24.15+, or 25.9+):
+Already manage Node.js? Install the published package instead (Node 22.23.4+, 24.22.1+, or 26.12.1+):
 
 ```bash
 npm install -g openclaw@latest --allow-scripts=openclaw

@@ -775,12 +775,12 @@ describe("install.ps1 failure handling", () => {
     const sqliteBody = extractFunctionBody(source, "Test-NodeSqliteSupported");
     const checkNodeBody = extractFunctionBody(source, "Check-Node");
     expect(versionBody).toContain("$major -eq 22");
-    expect(versionBody).toContain("$patch -ge 3");
+    expect(versionBody).toContain("$patch -ge 4");
     expect(versionBody).toContain("$major -eq 24");
-    expect(versionBody).toContain("$minor -ge 15");
-    expect(versionBody).toContain("$major -eq 25");
-    expect(versionBody).toContain("$minor -ge 9");
-    expect(versionBody).toContain("$major -gt 25");
+    expect(versionBody).toContain("$minor -eq 22 -and $patch -ge 1");
+    expect(versionBody).toContain("$major -eq 26");
+    expect(versionBody).toContain("$minor -eq 12 -and $patch -ge 1");
+    expect(versionBody).toContain("$major -gt 26");
     expect(sqliteBody).toContain("$minor -eq 51 -and $patch -ge 3");
     expect(checkNodeBody).toContain("Test-NodeVersionSupported -Version $nodeVersion");
     expect(checkNodeBody).toContain("Get-Command node -CommandType Application");
