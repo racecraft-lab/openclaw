@@ -128,8 +128,8 @@ describe("install runtime enforcement", () => {
       {
         name: "old launcher",
         launcher: "/opt/bun/bin/bun",
-        bun: "1.4.2",
-        error: "Bun launcher /opt/bun/bin/bun requires Bun 1.4.3+",
+        bun: "1.4.3",
+        error: "Bun launcher /opt/bun/bin/bun requires Bun 1.4.4+",
       },
       { name: "relative launcher", launcher: "bin/bun" },
       {
@@ -154,7 +154,7 @@ describe("install runtime enforcement", () => {
       },
     ].flatMap((testCase) =>
       lifecyclePaths.map((layout): LauncherCase & { layout: typeof layout } => ({
-        bun: "1.4.3",
+        bun: "1.4.4",
         accepted: false,
         shimMatchesBun: true,
         error: "detected Node missing",
@@ -187,7 +187,7 @@ describe("install runtime enforcement", () => {
       );
       const result = enforce(
         {
-          bunVersion: "1.4.3",
+          bunVersion: "1.4.4",
           probeNodeRuntime: () =>
             probe({
               bunVersion: layout.bunVersion,
@@ -271,7 +271,7 @@ describe("install runtime enforcement", () => {
       expect(
         enforceSupportedNodeRuntime(
           {
-            bunVersion: "1.4.3",
+            bunVersion: "1.4.4",
             engine: EXPECTED_NODE_ENGINE_RANGE,
             probeNodeRuntime: () =>
               probePackageCliNodeRuntime({

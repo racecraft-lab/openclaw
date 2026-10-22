@@ -36,7 +36,7 @@ it
       .spyOn(runtimePaths, "resolveBunRuntimeInfo")
       .mockImplementation(async (_runtime, actualEnv) => ({
         status: actualEnv?.[key] === env[key] ? "supported" : "unsupported",
-        version: "1.4.3",
+        version: "1.4.4",
         sqliteVersion: "3.53.4",
         sqliteLibraryPath: library,
         sqliteProbe: { available: true, version: "3.53.4", text: true, blob: true, json: true },
@@ -83,7 +83,7 @@ it("refuses unsafe recovery discovery with the exact retained library input", as
   vi.stubGlobal("process", {
     ...process,
     platform: "darwin",
-    versions: { ...process.versions, bun: "1.4.3" },
+    versions: { ...process.versions, bun: "1.4.4" },
     env: {},
   });
   const probe = vi.spyOn(runtimeGuard, "isCurrentRuntimeSupported").mockResolvedValue(false);

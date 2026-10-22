@@ -37,7 +37,7 @@ describe("managed handoff Node selection", () => {
         executable: { path: "node" },
         runtime: { path: "runtime" },
         openclaw: { version: "2026.10.3" },
-        bun: { version: "1.4.3" },
+        bun: { version: "1.4.4" },
       }),
     );
     expect(resolveManagedServiceCliArgv({ execPath }, ["gateway", "restart"])).toEqual([

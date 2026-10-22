@@ -802,6 +802,36 @@ describe("openclaw launcher", () => {
     expect(result.stderr).not.toContain("TypeError");
   });
 
+  it.each(
+    (
+      [
+        ["1.4.3", false],
+        ["1.4.4", true],
+        ["1.4.4-canary.1+ef37c31de", true],
+      ] as const
+    ).flatMap(([version, supported]) =>
+      [[], ["browser", "extension", "native-host"]].map((args) => ({ version, supported, args })),
+    ),
+  )(
+    "enforces Bun $version admission before $args startup",
+    async ({ version, supported, args }) => {
+      await writeEntry('process.stdout.write("ordinary-entry");');
+      const native = path.join(root, "dist", "extensions", "browser", "native-host-entry.js");
+      await fs.mkdir(path.dirname(native), { recursive: true });
+      await fs.writeFile(native, 'process.stdout.write("native-entry");');
+      const preload = await writePreload(
+        "bun-version.mjs",
+        `Object.defineProperty(process.versions, "bun", { value: ${JSON.stringify(version)} });`,
+      );
+      const result = runNode([...preload, path.join(root, "openclaw.mjs"), ...args]);
+      expectOutput(
+        result,
+        supported ? (args.length ? "native-entry" : "ordinary-entry") : "",
+        supported ? 0 : 1,
+      );
+    },
+  );
+
   it("rejects Bun without node:sqlite even when its Node compatibility version is new enough", async () => {
     await writeEntry('process.stdout.write("unexpected-bun-runtime\\n");\n');
     const execArgv = await writePreload(

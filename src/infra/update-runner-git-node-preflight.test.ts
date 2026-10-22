@@ -31,7 +31,7 @@ const setHost = (versions: typeof process.versions, execPath = originalExecPath)
 beforeEach(async () => {
   root = tempDirs.make("candidate-node-");
   await writeEngine(">=26.12.1");
-  setHost({ ...originalVersions, bun: "1.4.3" });
+  setHost({ ...originalVersions, bun: "1.4.4" });
   vi.spyOn(runtimes, "resolveSystemNodeInfo").mockResolvedValue(null);
   vi.spyOn(executables, "resolveExecutableFromPathEnv").mockImplementation((_name, directories) => {
     return directories[0] === path.dirname(nodePath) ? nodePath : oldNodePath;

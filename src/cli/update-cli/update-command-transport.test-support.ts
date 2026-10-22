@@ -75,7 +75,7 @@ export function createUpdateExecTransportFixture(params: {
         stdout: JSON.stringify({
           nodeVersion: process.versions.node,
           bunVersion:
-            command === process.execPath ? (process.versions.bun ?? null) : isBun ? "1.4.3" : null,
+            command === process.execPath ? (process.versions.bun ?? null) : isBun ? "1.4.4" : null,
           sqliteVersion: "3.53.4",
           sqliteProbe: { available: true, version: "3.53.4", text: true, blob: true, json: true },
           sqliteSelectionError: null,
