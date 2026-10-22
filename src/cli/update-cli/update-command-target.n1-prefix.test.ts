@@ -98,7 +98,7 @@ beforeEach(() => {
   state.manager = "npm";
   state.sqliteText = true;
   vi.mocked(resolveNodeRuntimeInfo).mockReset();
-  vi.mocked(resolveBunRuntimeInfo).mockReset().mockResolvedValue(runtimeFixture("1.4.3", "3.53.4"));
+  vi.mocked(resolveBunRuntimeInfo).mockReset().mockResolvedValue(runtimeFixture("1.4.4", "3.53.4"));
 });
 afterEach(() => vi.unstubAllGlobals());
 const rootB = path.resolve(".n1-fixture/B/node_modules/openclaw");
@@ -169,7 +169,7 @@ it.each([
       vi.stubGlobal("process", {
         ...process,
         execPath: "/fixture/bun",
-        versions: { ...process.versions, bun: "1.4.3" },
+        versions: { ...process.versions, bun: "1.4.4" },
       });
       vi.mocked(resolveNodeRuntimeInfo).mockResolvedValue(runtimeFixture("24.22.1"));
     } else {

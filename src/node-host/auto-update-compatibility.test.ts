@@ -138,7 +138,7 @@ describe("candidate node runtime and database compatibility", () => {
         value: {
           ...process.versions,
           node: runtime === "renamed Node" ? "26.12.1" : process.versions.node,
-          bun: runtime === "Bun" ? "1.4.3" : undefined,
+          bun: runtime === "Bun" ? "1.4.4" : undefined,
         },
       });
       if (runtime === "renamed Node") {

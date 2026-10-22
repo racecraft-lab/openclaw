@@ -91,12 +91,12 @@ it("uses the running Bun on first install when Node is unavailable", async () =>
   const bunVersion = Object.getOwnPropertyDescriptor(process.versions, "bun");
   const bunPath = "/opt/app/runtime/bun";
   Object.defineProperty(process, "execPath", { configurable: true, value: bunPath });
-  Object.defineProperty(process.versions, "bun", { configurable: true, value: "1.4.3" });
+  Object.defineProperty(process.versions, "bun", { configurable: true, value: "1.4.4" });
   vi.spyOn(runtimePaths, "resolvePreferredNodePath").mockResolvedValue(undefined);
   vi.spyOn(runtimePaths, "resolveSystemNodeInfo").mockResolvedValue(null);
   const probe = vi.spyOn(runtimePaths, "resolveBunRuntimeInfo").mockResolvedValue({
     status: "supported" as const,
-    version: "1.4.3",
+    version: "1.4.4",
     ...sqliteCapabilities,
   });
   try {

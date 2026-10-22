@@ -39,7 +39,7 @@ export function useNodeUpdateRuntime(runtime?: "bun" | "node", platform?: NodeJS
   const originalExecPath = Object.getOwnPropertyDescriptor(process, "execPath")!;
   const select = (selected: "bun" | "node", selectedPlatform = platform) => {
     if (selected === "bun") {
-      Object.defineProperty(process.versions, "bun", { value: "1.4.3", configurable: true });
+      Object.defineProperty(process.versions, "bun", { value: "1.4.4", configurable: true });
     } else {
       Reflect.deleteProperty(process.versions, "bun");
     }

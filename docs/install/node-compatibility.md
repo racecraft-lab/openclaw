@@ -28,7 +28,7 @@ Node 24 and 26 remain rejected, including `24.22.1-rc.1` and `26.12.1-rc.1`.
 Node 27 development builds are accepted without changing the installer or Docker
 defaults; Node 26 remains recommended and Node 24 remains the CI runtime.
 
-The Bun opt-in runtime requires **Bun 1.4.3+** or the pinned OpenClaw fork; see [Bun compatibility](/install/bun-compatibility).
+The Bun opt-in runtime requires **Bun 1.4.4+** or the pinned OpenClaw fork; see [Bun compatibility](/install/bun-compatibility).
 
 ## How the gate decides
 

@@ -26,6 +26,9 @@ import {
   canRunOpenClawNodeDiagnostics,
   classifyUnsupportedNodeCommand,
   formatUnsupportedNodeDiagnosticWarning,
+  isNodeVersionAtLeast,
+  MINIMUM_BUN_VERSION,
+  parseNodeReleaseVersion,
 } from "./node-version.mjs";
 
 watchCliRespawnParent();
@@ -39,23 +42,29 @@ const { detectCurrentSqliteCapabilities, nodeRuntimeFailure } = await import("./
 const RECOMMENDED_NODE_MAJOR = 26;
 const SUPPORTED_NODE_RANGE = ">=24.22.1 <25, or >=26.12.1";
 const COMPILE_CACHE_DISABLED_RESPAWNED_ENV = "OPENCLAW_COMPILE_CACHE_DISABLED_RESPAWNED";
+// Match the Bun guard's numeric floor for the pinned fork's canary labels.
+const hasSupportedBunVersion = isNodeVersionAtLeast(
+  parseNodeReleaseVersion(process.versions.bun?.split("-")[0]),
+  MINIMUM_BUN_VERSION,
+);
 
 const ensureSupportedRuntimeVersion = async () => {
   if (process.versions.bun) {
-    // Bun >=1.4 (Rust rewrite) ships node:sqlite; feature-probe instead of
-    // rejecting Bun outright so capable Bun builds can run OpenClaw.
+    // Bun >=1.4 ships node:sqlite; require the supported version and the builtin.
     let hasNodeSqlite;
     try {
       hasNodeSqlite = Boolean(process.getBuiltinModule?.("node:sqlite"));
     } catch {
       hasNodeSqlite = false;
     }
-    if (hasNodeSqlite) {
+    if (hasNodeSqlite && hasSupportedBunVersion) {
       return false;
     }
     process.stderr.write(
-      "openclaw: this Bun runtime is unsupported because it does not provide node:sqlite.\n" +
-        `Use Node.js ${SUPPORTED_NODE_RANGE}; Bun remains supported for installs and package scripts.\n`,
+      hasNodeSqlite
+        ? "openclaw: Bun 1.4.4 or newer is required.\n"
+        : "openclaw: this Bun runtime is unsupported because it does not provide node:sqlite.\n" +
+            `Use Node.js ${SUPPORTED_NODE_RANGE}; Bun remains supported for installs and package scripts.\n`,
     );
     process.exitCode = 1;
     return true;
@@ -619,7 +628,7 @@ if (isBrowserNativeHostInvocation) {
   try {
     // A browser-owned pipe must never launch an interactive runtime installer.
     const supported = process.versions.bun
-      ? Boolean(process.getBuiltinModule?.("node:sqlite"))
+      ? hasSupportedBunVersion && Boolean(process.getBuiltinModule?.("node:sqlite"))
       : !nodeRuntimeFailure(process.versions.node, await detectCurrentSqliteCapabilities());
     if (!supported) {
       process.exitCode = 1;

@@ -55,11 +55,11 @@ it.each([
 ] as const)(
   "suggests $suggested for $flow with Node at $nodePath",
   async ({ flow, nodePath, suggested }) => {
-    Object.defineProperty(process.versions, "bun", { configurable: true, value: "1.4.3" });
+    Object.defineProperty(process.versions, "bun", { configurable: true, value: "1.4.4" });
     vi.spyOn(runtimePaths, "resolvePreferredNodePath").mockResolvedValue(nodePath);
     vi.spyOn(runtimePaths, "resolveBunRuntimeInfo").mockResolvedValue({
       status: "supported",
-      version: "1.4.3",
+      version: "1.4.4",
       sqliteVersion: "3.53.4",
       sqliteProbe: { available: true, version: "3.53.4", text: true, blob: true, json: true },
       nodeSharedSqlite: false,

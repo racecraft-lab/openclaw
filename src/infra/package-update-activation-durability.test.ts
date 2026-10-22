@@ -196,7 +196,7 @@ describe.skipIf(process.platform === "win32")("package preparation durability", 
         }
         return {
           status: cut === "unsupported-bun" ? "unsupported" : "supported",
-          version: cut === "unsupported-bun" ? "1.3.0" : "1.4.3",
+          version: cut === "unsupported-bun" ? "1.3.0" : "1.4.4",
           sqliteVersion: "3.53.4",
           sqliteProbe: {
             available: true,
